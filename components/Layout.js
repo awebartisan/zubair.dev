@@ -9,8 +9,12 @@ export default function Layout({ title, children }) {
       </Head>
       <div className='container px-10'>
         <div className='mb-2'>
-          <div className='pt-8 lg:pt-12 prose'>
-            <h1 className='text-3xl'>Zubair Mohsin</h1>
+          <div className='pt-8 lg:pt-12'>
+            <h1 className='text-5xl'>
+                <Link href="/">
+                    <a>Zubair Mohsin</a>
+                </Link>
+            </h1>
           </div>
         </div>
         <div className='w-1/2'>
