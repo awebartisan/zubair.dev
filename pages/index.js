@@ -3,9 +3,9 @@ import Layout from "../components/Layout";
 
 export default function Index() {
   return (
-    <Layout title="About">
+    <Layout title='About'>
       <div className='py-8'>
-        <div className='prose'>
+        <div className='prose mb-8'>
           <h2>Who am I?</h2>
           <p>
             Hello I am{" "}
@@ -36,6 +36,35 @@ export default function Index() {
             provision my servers with all the required services and deploying
             apps.
           </p>
+        </div>
+        <div className='prose'>
+          <h2>Online Presence:</h2>
+          <ul className='flex space-x-4 list-none'>
+            <li>
+              <a target='_blank' href='https://github.com/awebartisan'>
+                GitHub
+              </a>
+            </li>
+            <li>
+              <a
+                target='_blank'
+                href='https://stackoverflow.com/users/4401299/awebartisan'>
+                Stackoverflow
+              </a>
+            </li>
+            <li>
+              <a target='_blank' href='https://twitter.com/Zubairmohsin33'>
+                Twitter
+              </a>
+            </li>
+            <li>
+              <a
+                target='_blank'
+                href='https://www.linkedin.com/in/zubair-mohsin/'>
+                LinkedIn
+              </a>
+            </li>
+          </ul>
         </div>
       </div>
     </Layout>
