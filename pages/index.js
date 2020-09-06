@@ -53,6 +53,13 @@ export default function Index() {
               </a>
             </li>
             <li>
+              <a
+                target='_blank'
+                href='https://dev.to/zubairmohsin33'>
+                DEV
+              </a>
+            </li>
+            <li>
               <a target='_blank' href='https://twitter.com/Zubairmohsin33'>
                 Twitter
               </a>
