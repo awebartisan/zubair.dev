@@ -8,7 +8,7 @@ export default function Layout({ title, children }) {
                 <title>Zubair Mohsin | {title}</title>
             </Head>
             <header className="px-6 sm:px-12 lg:px-16 py-6 mb-12 lg:flex justify-between">
-                <h1 className="text-2xl">
+                <h1 className="text-center text-2xl">
                     <Link href="/">
                         <a>Zubair Mohsin</a>
                     </Link>
