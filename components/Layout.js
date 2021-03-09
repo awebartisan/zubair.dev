@@ -1,11 +1,18 @@
 import Head from 'next/head';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 
-export default function Layout({ title, children }) {
+export default function Layout({ children, title }) {
+    const router = useRouter();
     return (
         <>
             <Head>
-                <title>Zubair Mohsin | {title}</title>
+                <meta
+                    name="viewport"
+                    content="width=device-width, initial-scale=1"
+                />
+                <meta charSet="utf-8" />
+                <title>{title}</title>
             </Head>
             <header className="px-6 sm:px-12 lg:px-16 py-6 mb-12 lg:flex justify-between">
                 <h1 className="text-center text-2xl">
@@ -16,11 +23,11 @@ export default function Layout({ title, children }) {
                 <nav>
                     <ul className="flex justify-center lg:justify-end space-x-4">
                         <li>
-                            <Link href="https://dev.to/zubairmohsin33">
+                            <Link href="/blog">
                                 <a
-                                    target="_blank"
                                     className={
-                                        title === 'Blog'
+                                        router.pathname.includes('blog') ||
+                                        router.pathname === '/'
                                             ? 'text-gray-800'
                                             : 'text-gray-600'
                                     }
@@ -30,35 +37,29 @@ export default function Layout({ title, children }) {
                             </Link>
                         </li>
                         <li>
-                            <Link href="/projects">
+                            <Link href="/about">
                                 <a
                                     className={
-                                        title === 'Projects'
+                                        router.pathname === '/about'
                                             ? 'text-gray-800'
                                             : 'text-gray-600'
                                     }
                                 >
-                                    Projects
+                                    About
                                 </a>
                             </Link>
                         </li>
                         <li>
-                            <Link href="/contact">
-                                <a
-                                    className={
-                                        title === 'Contact'
-                                            ? 'text-gray-800'
-                                            : 'text-gray-600'
-                                    }
-                                >
-                                    Contact
+                            <Link href="https://twitter.com/zubairmohsin33">
+                                <a target="_blank" className="text-gray-600">
+                                    Twitter
                                 </a>
                             </Link>
                         </li>
                     </ul>
                 </nav>
             </header>
-            <div className="container max-w-2xl mx-auto px-4">{children}</div>
+            <div className="container max-w-3xl mx-auto px-4">{children}</div>
         </>
     );
 }

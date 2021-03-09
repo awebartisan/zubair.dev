@@ -1,0 +1,132 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title: 'How Laravel uses `doctrine/inflector` package',
+    description:
+        "I have started a blog series to explore how Laravel uses third-party packages under-the-hood. First up is `doctrine/inflector` dependency package. Let's see how it is being used in Laravel.",
+    date: 'March 09, 2021',
+    readTime: 2,
+    url:
+        'https://zubairmohsin.dev/blog/how-laravel-uses-doctrine-inflector-package',
+    canonical:
+        'https://zubairmohsin.dev/blog/how-laravel-uses-doctrine-inflector-package',
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+`doctrine/inflector` is a small library which helps in `uppercase/lowercase` and `singular/plural` based manipulation of a **string**.
+
+Laravel uses this package in a class called `Pluralizer` as shown below:
+
+```php
+<?php
+
+namespace Illuminate\Support;
+
+use Doctrine\Inflector\CachedWordInflector;
+use Doctrine\Inflector\Inflector;
+use Doctrine\Inflector\Rules\English;
+use Doctrine\Inflector\RulesetInflector;
+
+class Pluralizer
+{
+    /**
+     * Get the plural form of an English word.
+     *
+     * @param  string  $value
+     * @param  int  $count
+     * @return string
+     */
+    public static function plural($value, $count = 2)
+    {
+        if ((int) abs($count) === 1 || static::uncountable($value) || preg_match('/^(.*)[A-Za-z0-9\x{0080}-\x{FFFF}]$/u', $value) == 0) {
+            return $value;
+        }
+
+        $plural = static::inflector()->pluralize($value);
+
+        return static::matchCase($plural, $value);
+    }
+
+    /**
+     * Get the singular form of an English word.
+     *
+     * @param  string  $value
+     * @return string
+     */
+    public static function singular($value)
+    {
+        $singular = static::inflector()->singularize($value);
+
+        return static::matchCase($singular, $value);
+    }
+}
+```
+
+<p style={{ textAlign: 'center', fontSize: '0.75rem;' }}>
+    Full source code can be found{' '}
+    <a
+        target="_blank"
+        href="https://github.com/laravel/framework/blob/8.x/src/Illuminate/Support/Pluralizer.php"
+    >
+        here
+    </a>
+</p>
+
+Laravel then uses `Pluralizer` class in `Str` helper class. `Str::singular()` and `Str::plural()` helper methods leverage `Pluralizer::singular()` and `Pluralizer::plural()` respectively as shown below:
+
+```php
+<?php
+
+namespace Illuminate\Support;
+
+use Illuminate\Support\Traits\Macroable;
+
+class Str
+{
+    use Macroable;
+
+    /**
+     * Get the plural form of an English word.
+     *
+     * @param  string  $value
+     * @param  int  $count
+     * @return string
+     */
+    public static function plural($value, $count = 2)
+    {
+        return Pluralizer::plural($value, $count);
+    }
+
+    /**
+     * Get the singular form of an English word.
+     *
+     * @param  string  $value
+     * @return string
+     */
+    public static function singular($value)
+    {
+        return Pluralizer::singular($value);
+    }
+}
+```
+
+<p style={{ textAlign: 'center', fontSize: '0.75rem;' }}>
+    Full source code can be found{' '}
+    <a
+        target="_blank"
+        href="https://github.com/laravel/framework/blob/8.x/src/Illuminate/Support/Str.php"
+    >
+        here
+    </a>
+</p>
+
+### How Laravel deals with Uncountables?
+
+If we look at the implementation of `Pluralizer` class, we can see that Laravel maintains an array of **uncountables** like _education_, _audio_, _jedi_ etc. If you provide such value to `Str::plural()` helper method, it will be returned as it is.
+
+---
+
+I hope you find this blogpost useful. Next up we'll see how Laravel uses `dragonmantank/cron-expression` package.
+
+Stay in the loop by following me on [Twitter](https://twitter.com/Zubairmohsin33)
