@@ -11,7 +11,7 @@ export default function BlogPost({ children, meta }) {
                 openGraph={{
                     url: meta.url,
                     title: meta.title,
-                    description: meta.title,
+                    description: meta.description,
                     site_name: 'Zubair Mohsin -  Blog',
                     images: [
                         {
