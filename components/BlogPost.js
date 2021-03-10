@@ -33,7 +33,7 @@ export default function BlogPost({ children, meta }) {
                 <p className="mb-7 text-gray-500">
                     <time>{meta.date}</time>
                 </p>
-                <article className="prose">{children}</article>
+                <article className="prose max-w-none">{children}</article>
             </div>
         </Layout>
     );

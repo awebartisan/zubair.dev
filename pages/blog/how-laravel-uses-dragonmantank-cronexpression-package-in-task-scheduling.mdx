@@ -1,0 +1,276 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title:
+        'How Laravel uses `dragonmantank/cron-expression` package in Task Scheduling',
+    description:
+        "Let's have a look at how Laravel uses `dragonmantank/cron-expression` package in task/command scheduling.",
+    readTime: 3,
+    url:
+        'https://zubairmohsin.dev/blog/how-laravel-uses-dragonmantank-cron-expression-package-in-task-scheduling',
+    canonical:
+        'https://zubairmohsin.dev/blog/how-laravel-uses-dragonmantank-cron-expression-package-in-task-scheduling',
+    date: 'Mar 10, 2021',
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+From the About section of `dragonmantank/cron-expression` package on [GitHub](https://github.com/dragonmantank/cron-expression):
+
+> CRON for PHP: Calculate the next or previous run date and determine if a CRON expression is due.
+
+This package helps in dealing with CRON jobs in following ways:
+
+-   Determine if a cron job is due running?
+-   When will a job run next?
+-   When a cron job was previously ran?
+
+Let’s take a look at implementation of these features in `CronExpression` class of this package.
+
+```php
+<?php
+
+namespace Cron;
+
+class CronExpression
+{
+	/**
+     * Determine if the cron is due to run based on the current date or a
+     * specific date.  This method assumes that the current number of
+     * seconds are irrelevant, and should be called once per minute.
+     *
+     * @param string|\DateTimeInterface $currentTime Relative calculation date
+     * @param null|string               $timeZone    TimeZone to use instead of the system default
+     *
+     * @return bool Returns TRUE if the cron is due to run or FALSE if not
+     */
+    public function isDue($currentTime = 'now', $timeZone = null): bool
+    {
+        $timeZone = $this->determineTimeZone($currentTime, $timeZone);
+
+        if ('now' === $currentTime) {
+            $currentTime = new DateTime();
+        } elseif ($currentTime instanceof DateTime) {
+            $currentTime = clone $currentTime;
+        } elseif ($currentTime instanceof DateTimeImmutable) {
+            $currentTime = DateTime::createFromFormat('U', $currentTime->format('U'));
+        } elseif (\is_string($currentTime)) {
+            $currentTime = new DateTime($currentTime);
+        }
+
+        Assert::isInstanceOf($currentTime, DateTime::class);
+        $currentTime->setTimezone(new DateTimeZone($timeZone));
+
+        // drop the seconds to 0
+        $currentTime->setTime((int) $currentTime->format('H'), (int) $currentTime->format('i'), 0);
+
+        try {
+            return $this->getNextRunDate($currentTime, 0, true)->getTimestamp() === $currentTime->getTimestamp();
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+	 /**
+     * Get a next run date relative to the current date or a specific date
+     *
+     * @param string|\DateTimeInterface $currentTime      Relative calculation date
+     * @param int                       $nth              Number of matches to skip before returning a
+     *                                                    matching next run date.  0, the default, will return the
+     *                                                    current date and time if the next run date falls on the
+     *                                                    current date and time.  Setting this value to 1 will
+     *                                                    skip the first match and go to the second match.
+     *                                                    Setting this value to 2 will skip the first 2
+     *                                                    matches and so on.
+     * @param bool                      $allowCurrentDate Set to TRUE to return the current date if
+     *                                                    it matches the cron expression.
+     * @param null|string               $timeZone         TimeZone to use instead of the system default
+     *
+     * @throws \RuntimeException on too many iterations
+     * @throws \Exception
+     *
+     * @return \DateTime
+     */
+    public function getNextRunDate($currentTime = 'now', int $nth = 0, bool $allowCurrentDate = false, $timeZone = null): DateTime
+    {
+        return $this->getRunDate($currentTime, $nth, false, $allowCurrentDate, $timeZone);
+    }
+
+    /**
+     * Get a previous run date relative to the current date or a specific date.
+     *
+     * @param string|\DateTimeInterface $currentTime      Relative calculation date
+     * @param int                       $nth              Number of matches to skip before returning
+     * @param bool                      $allowCurrentDate Set to TRUE to return the
+     *                                                    current date if it matches the cron expression
+     * @param null|string               $timeZone         TimeZone to use instead of the system default
+     *
+     * @throws \RuntimeException on too many iterations
+     * @throws \Exception
+     *
+     * @return \DateTime
+     *
+     * @see \Cron\CronExpression::getNextRunDate
+     */
+    public function getPreviousRunDate($currentTime = 'now', int $nth = 0, bool $allowCurrentDate = false, $timeZone = null): DateTime
+    {
+        return $this->getRunDate($currentTime, $nth, true, $allowCurrentDate, $timeZone);
+    }
+}
+```
+
+The real meat is `getRunDate()` method. But its implementation is huge, it will only increase length of the blog. [Here](https://github.com/dragonmantank/cron-expression/blob/master/src/Cron/CronExpression.php#L350) you can find full source code.
+
+## Usage in `schedule:run` command
+
+Laravel leverages this package in Task Scheduling. Let’s say we make a command named `say:hello` and we schedule it `hourly()` inside `Console\Kernel.php` like below:
+
+```php
+    /**
+     * Define the application's command schedule.
+     *
+     * @return void
+     */
+    protected function schedule(Schedule $schedule)
+    {
+        $schedule->command('say:hello')->hourly();
+    }
+```
+
+Now, let’s see what happens when we run `schedule:run` command. Below is a ripped off version of `schedule:run` command’s `handle` method.
+
+```php
+    public function handle(Schedule $schedule, ...)
+    {
+        foreach ($this->schedule->dueEvents($this->laravel) as $event) {
+            if (! $event->filtersPass($this->laravel)) {
+                $this->dispatcher->dispatch(new ScheduledTaskSkipped($event));
+
+                continue;
+            }
+
+            if ($event->onOneServer) {
+                $this->runSingleServerEvent($event);
+            } else {
+                $this->runEvent($event);
+            }
+        }
+    }
+```
+
+As we can see it loops through all due events , checks if given filters for the event do not pass, it skips that event, otherwise run that event.
+
+Let’s take a look at `dueEvents()` method on `Schedule` class and understand what are events.
+
+```php
+    /**
+     * Get all of the events on the schedule that are due.
+     *
+     * @param  \Illuminate\Contracts\Foundation\Application  $app
+     * @return \Illuminate\Support\Collection
+     */
+    public function dueEvents($app)
+    {
+        return collect($this->events)->filter->isDue($app);
+    }
+
+    /**
+     * Get all of the events on the schedule.
+     *
+     * @return \Illuminate\Console\Scheduling\Event[]
+     */
+    public function events()
+    {
+        return $this->events;
+    }
+```
+
+`dueEvents()` return a collection of `Illuminate\Console\Scheduling\Event` objects, filtering these objects based on if they are due or not.
+
+Now, let’s head over to `Illuminate\Console\Scheduling\Event` to see the implementation of `isDue()` method.
+
+```php
+    /**
+     * Determine if the given event should run based on the Cron expression.
+     *
+     * @param  \Illuminate\Contracts\Foundation\Application  $app
+     * @return bool
+     */
+    public function isDue($app)
+    {
+        if (! $this->runsInMaintenanceMode() && $app->isDownForMaintenance()) {
+            return false;
+        }
+
+        return $this->expressionPasses() &&
+               $this->runsInEnvironment($app->environment());
+    }
+
+	  /**
+     * Determine if the Cron expression passes.
+     *
+     * @return bool
+     */
+    protected function expressionPasses()
+    {
+        $date = Carbon::now();
+
+        if ($this->timezone) {
+            $date->setTimezone($this->timezone);
+        }
+
+        return CronExpression::factory($this->expression)->isDue($date->toDateTimeString());
+    }
+```
+
+`isDue()` method checks for maintenance first, after that it calls `expressionPasses()` method, where we can finally see `CronExpression` class being used to determine if the `cron expression` of an event ( scheduled command ) is due .
+
+## Usage in `schedule:list` command
+
+`php artisan schedule:list` command outputs a table on the command line like shown below. It contains information about all schedule commands, e.g. their interval, description and when a command is next due.
+![](https://res.cloudinary.com/zubairmohsin/image/upload/v1615383636/schedulelistcommand_wlsuh8.png)
+
+Let’s take a look at the `handle` method of this command.
+
+```php
+    /**
+     * Execute the console command.
+     *
+     * @param  \Illuminate\Console\Scheduling\Schedule  $schedule
+     * @return void
+     * @throws \Exception
+     */
+    public function handle(Schedule $schedule)
+    {
+        foreach ($schedule->events() as $event) {
+            $rows[] = [
+                $event->command,
+                $event->expression,
+                $event->description,
+                (new CronExpression($event->expression))
+                            ->getNextRunDate(Carbon::now())
+                            ->setTimezone($this->option('timezone', config('app.timezone'))),
+            ];
+        }
+
+        $this->table([
+            'Command',
+            'Interval',
+            'Description',
+            'Next Due',
+        ], $rows ?? []);
+    }
+```
+
+As we can see, in order to get information about `Next Due`, Laravel utilises `CronExpression` class and it’s `getNextRunDate()` method.
+
+## Interesting facts about `cron-expression` package in Laravel context
+
+-   It was first known as `mtdowling/cron-expression` , which was abandoned on **20 Dec, 2019** by [Chris Tankersley](https://github.com/dragonmantank)
+-   After that forked and maintained by Chris himself under `dragonmantank/cron-expression`
+-   [Taylor Otwell](https://twitter.com/taylorotwell) first used this package in **Laravel v5.0** when he started working on **scheduled commands** back in **2014**
+-   [Link](https://github.com/laravel/framework/commit/fb335c287e48f6cdddf6e5d83a0c9f0a1a89e4d1#diff-d2ab9925cad7eac58e0ff4cc0d251a937ecf49e4b6bf57f8b95aab76648a9d34) to Taylor’s commit on GitHub when he first used this package in Laravel
+
+---
+
+I hope you find this blogpost useful. Next up we'll see how Laravel uses `egulias/email-validator` package. Stay in the loop by following me on [Twitter](https://twitter.com/Zubairmohsin33)

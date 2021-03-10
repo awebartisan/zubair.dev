@@ -59,7 +59,7 @@ export default function Layout({ children, title }) {
                     </ul>
                 </nav>
             </header>
-            <div className="container max-w-3xl mx-auto px-4">{children}</div>
+            <div className="container mx-auto px-4">{children}</div>
         </>
     );
 }
