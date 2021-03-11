@@ -14,7 +14,7 @@ export const Post = ({ post }) => {
                 </a>
             </Link>
             <p className="mb-7 text-gray-500">
-                <time dateTime="2021-03-03">{meta.date}</time>
+                <time dateTime="2021-03-03">{meta.showDate}</time>
             </p>
             <p className="mb-7">{meta.description}</p>
             <Link href={'/blog' + link}>
