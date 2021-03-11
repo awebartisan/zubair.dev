@@ -1,0 +1,97 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title: 'How I messed up my Newsletter',
+    description: 'How I messed up my newsletter and recovered.',
+    readTime: 2,
+    url: 'https://zubairmohsin.dev/blog/how-i-messed-up-my-newsletter',
+    canonical: 'https://zubairmohsin.dev/blog/how-i-messed-up-my-newsletter',
+    showDate: 'Mar 11, 2021',
+    date: new Date('2021-03-11'),
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+Out of nowhere I decided to create a newsletter for my blog. I thought I would share my blogposts in newsletters, some people might find it easier to read my blog in their email inbox.
+
+## What went wrong?
+
+Many things. Mostly on my behalf. I didn’t do proper research and just jumped right into it.
+I had an interaction with **Substack** few days ago and I had seen that it offers functionality to send newsletters. I just signed up and created my publication and shared all over the social media. And to my surprise, I got 20 subscribers within 1-2 hours.
+
+I thought lets send a **Hello World** newsletter to my subscribers. And then I had moment of realisations about Substack.
+
+-   Substack is a complete writing solution for Writers. Which means, it gives you a website and a newsletter.
+-   You can only send content via newsletter which you also **post** on Substack.
+-   I thought, okay, maybe I can set **canonical urls** of my own blog. Turns out, Substack doesn’t offer that
+-   In that weak moment, I thought, okay, lets move my blog to Substack with custom domain. Guess what, custom domain is a paid feature which costs **50$** ( one-time fee )
+
+Then I realised I should finally do some research 😅 and also define my requirements.
+
+## Options for sending newsletters other than Substack
+
+-   Mailchimp
+-   Mailcoach ( self-hosted )
+-   Buttondown
+-   ConvertKit
+-   Drip
+-   Gumroad
+-   and more…
+
+I also discussed this with [Tom Witkowski](https://twitter.com/devgummibeer) and he said “ConvertKit is the default choice of Laravel Community ^^” .
+
+## What I needed
+
+A platform which:
+
+-   Lets me own my content
+-   Helps my audience to subscribe/unsubscribe easily
+-   is GDPR compliant
+-   A form widget to put on my blog
+-   Supports markdown in the editor
+-   Allows me to use my custom domain without any additional cost
+
+ConvertKit was fulfilling all of these requirements. ( If you are reading this in your inbox, it came via ConvertKit )
+
+> Disclaimer: I have no affiliation with ConvertKit and I am not trying to promote in this post. Also, not trying to defame Substack.
+
+## What changes I needed to make it work with ConvertKit
+
+First of all, I had to export my precious subscribers from Substack to ConvertKit. It was easy via CSV file.
+
+After that I had to setup my email address. ConvertKit suggests not to use **free** email addresses like **@gmail.com** as it affects deliverability. Instead use an email address of your own domain, e.g. `info@zubairmohsin.dev`
+
+Now there are many options available for email hosting too:
+
+-   Google Workspace
+-   Outlook
+-   Zoho
+-   Your own DNS provider might have it
+
+I chose Zoho because it felt cheap at **$1.25 / user / month** and charged annually ( **$15** ).
+
+### Time to setup Zoho
+
+It’s a five step process.
+
+-   Domain verification via TXT record
+-   MX records setup
+-   SPF records setup
+-   DKIM records setup
+-   DMARC records setup
+
+I setup these records on my primary domain `zubairmohsin.dev` and I was happy to move on and send the newsletter. But then I recalled Tom Witkowki’s words to use a **subdomain** for newsletter. And I also read it somewhere ( possibly ConvertKit docs ) that its recommended to use **subdomain** for newsletter and newsletter’s email address.
+
+Great, now I had to above 5 steps all-over again for a subdomain. But most importantly, where do I point this subdomain?
+
+ConvertKit to the rescue again! They offer **landing pages** with many ready-to-go templates available. Also, you can use custom domains on these landing pages. That solved my subdomain problem and [letter.zubairmohsin.dev](https://letter.zubairmohsin.dev) was born.
+
+## Conclusion
+
+It’s okay to make mistakes, but I would also say that take some time do even a little of bit research. It pays off by saving you time and not getting frustrated by unexpected things. I hope you enjoy this post ( and future ones too).
+
+Massive thanks to my subscribers 🙏🏼
+
+---
+
+I hope you find this blogpost useful. You can subscribe to the newsletter at [letter.zubairmohsin.dev](https://letter.zubairmohsin.dev) for more interesting content.

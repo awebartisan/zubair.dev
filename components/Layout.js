@@ -73,6 +73,13 @@ export default function Layout({ children, title }) {
                                 </a>
                             </Link>
                         </li>
+                        <li>
+                            <Link href="https://letter.zubairmohsin.dev">
+                                <a target="_blank" className="text-gray-600">
+                                    Newsletter
+                                </a>
+                            </Link>
+                        </li>
                     </ul>
                 </nav>
             </header>
