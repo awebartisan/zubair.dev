@@ -1,0 +1,291 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title:
+        'How email validation works in Laravel using `egulias/email-validation` package',
+    description:
+        'A code dive blogpost about how email address validation works in Laravel.',
+    readTime: 2,
+    url:
+        'https://zubairmohsin.dev/blog/how-email-address-validation-works-in-laravel-using-egulias-email-validation-package',
+    canonical:
+        'https://zubairmohsin.dev/blog/how-email-address-validation-works-in-laravel-using-egulias-email-validation-package',
+    showDate: 'Mar 14, 2021',
+    date: new Date('2021-03-14'),
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+It’s obvious from the name of this package that it helps with email address validation. It helps us make sure if the given email address is valid (according to some standards) or not.
+
+Laravel has a powerful **Validation** engine which helps you validate your data on incoming requests. It also provides several ways to perform validation:
+
+-   By calling `validate` method on `Request` object inside controller method
+-   By calling `$this->validate()` method inside controller method
+-   By using a separate `FormRequest` class
+-   `$this->valdiate()` method is made available using `ValidatesRequests` trait on controller.
+
+We'll follow the `FormRequest` based validation as it is becoming a standard in Laravel community.
+
+## Code Dive
+
+Let's say we are validating an email address field like below inside a `FormRequest`:
+
+```php
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class UsersRequest extends FormRequest
+{
+    public function rules()
+    {
+        return [
+            'email_address' => ['email']
+        ];
+    }
+}
+```
+
+And then use `UsersRequest` inside a controller like below:
+
+```php
+class UsersController
+{
+    public function store(UsersRequest $request)
+    {
+        User::create($request->validated());
+    }
+}
+```
+
+### What happens when we send the request?
+
+When we send the request to above controller method, a service provider named `FormRequestServiceProvider` is booted ( along with other service providers ).
+
+Let's take a look at its boot method:
+
+```php
+namespace Illuminate\Foundation\Providers;
+
+use Illuminate\Contracts\Validation\ValidatesWhenResolved;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Routing\Redirector;
+use Illuminate\Support\ServiceProvider;
+
+class FormRequestServiceProvider extends ServiceProvider
+{
+	public function boot()
+    {
+        *$this->app->afterResolving(ValidatesWhenResolved::class,
+				function ($resolved) {
+            $resolved->validateResolved();
+        });*
+
+        $this->app->resolving(FormRequest::class, function ($request, $app) {
+            $request = FormRequest::createFrom($app['request'], $request);
+
+            $request->setContainer($app)
+				->setRedirector($app->make(Redirector::class));
+        });
+    }
+}
+```
+
+If we interpret the highlighted code block, it says:
+
+> After resolving the class which implements `ValidatesWhenResolved` interface, call the `validateResolved` method on its instance.
+
+Our `UsersRequest` class extends the `FormRequest` class which implements `ValidatesWhenResolved` interface. Implementation for `validateResolved` method has been added to a Trait which can be found at `Illuminate\Foundation\Http\ValidatesWhenResolvedTrait` which is given below:
+
+```php
+public function validateResolved()
+{
+    $this->prepareForValidation();
+
+    if (!$this->passesAuthorization()) {
+        $this->failedAuthorization();
+    }
+
+    **$instance = $this->getValidatorInstance();**
+
+    **if ($instance->fails()) {
+        $this->failedValidation($instance);
+    }**
+
+    $this->passedValidation();
+}
+```
+
+`getValidatorInstance()` method has been overridden inside `FormRequest` class like below:
+
+```php
+/**
+ * Get the validator instance for the request.
+ *
+ * @return \Illuminate\Contracts\Validation\Validator
+*/
+protected function getValidatorInstance()
+{
+    if ($this->validator) {
+        return $this->validator;
+    }
+
+    $factory = $this->container->make(ValidationFactory::class);
+
+    if (method_exists($this, 'validator')) {
+        $validator = $this->container->call(
+			[$this, 'validator'], compact('factory')
+		);
+    } else {
+        $validator = $this->createDefaultValidator($factory);
+    }
+
+    if (method_exists($this, 'withValidator')) {
+        $this->withValidator($validator);
+    }
+
+    $this->setValidator($validator);
+
+    return $this->validator;
+}
+
+/**
+ * Create the default validator instance.
+ *
+ * @param  \Illuminate\Contracts\Validation\Factory  $factory
+ * @return \Illuminate\Contracts\Validation\Validator
+*/
+protected function createDefaultValidator(ValidationFactory $factory)
+{
+    return $factory->make(
+        $this->validationData(),
+        $this->container->call([$this, 'rules']),
+        $this->messages(),
+        $this->attributes()
+    )->stopOnFirstFailure($this->stopOnFirstFailure);
+}
+```
+
+For the ease of understanding, above code can be translated to:
+
+> If developer has provided their own implementation of validator using `validator()` method on `UsersRequest` class, use that _Validator._ Otherwise, `createDefaultValidator` and provide `data to be validated`, `rules` and `messages` etc. to `Validator` instance.
+
+Now that a **Validator** instance has been created, next in `validateResolved()` method is calling `fails()` method the given instance.
+
+```php
+namespace Illuminate\Validation;
+
+class Validator implements ValidatorContract
+{
+    public function fails()
+    {
+        return ! $this->passes();
+    }
+
+		//ripped off implementation of passes() method
+		public function passes()
+    {
+        foreach ($this->rules as $attribute => $rules) {
+            **foreach ($rules as $rule) {
+                $this->validateAttribute($attribute, $rule);
+            }**
+        }
+    }
+
+    //ripped off implementation of validateAttribute() method
+    protected function validateAttribute($attribute, $rule)
+    {
+        $this->currentRule = $rule;
+
+        [$rule, $parameters] = ValidationRuleParser::parse($rule);
+
+        if ($rule == '') {
+            return;
+        }
+
+        $value = $this->getValue($attribute);
+
+        $validatable = $this->isValidatable($rule, $attribute, $value);
+
+        **$method = "validate{$rule}";**
+
+        if ($validatable &&! **$this->$method($attribute, $value, $parameters, $this)**)
+        {
+            $this->addFailure($attribute, $rule, $parameters);
+        }
+    }
+
+}
+
+```
+
+`fails()` method calls for `passes()` method which in turn calls `validateAttribute()` method. This is where our data attributes are checked against the validation rules we provided.
+
+`validate{$rule}` string is creating a **method name** for the given rule. Since we are exploring **email** validation rule, it will become `validateEmail()` . Next, this method is being called as part of `if` condition.
+
+Since implementations of all available validation methods can be found in `Illuminate\Validation\Concerns\ValidatesAttributes` trait. Hence the `validateEmail()` method below:
+
+```php
+namespace Illuminate\Validation\Concerns;
+
+use Egulias\EmailValidator\EmailValidator;
+use Egulias\EmailValidator\Validation\DNSCheckValidation;
+use Egulias\EmailValidator\Validation\MultipleValidationWithAnd;
+use Egulias\EmailValidator\Validation\NoRFCWarningsValidation;
+use Egulias\EmailValidator\Validation\RFCValidation;
+use Egulias\EmailValidator\Validation\SpoofCheckValidation;
+
+trait ValidatesAttributes
+{
+
+		/**
+     * Validate that an attribute is a valid e-mail address.
+     *
+     * @param  string  $attribute
+     * @param  mixed  $value
+     * @param  array  $parameters
+     * @return bool
+     */
+    public function validateEmail($attribute, $value, $parameters)
+    {
+        $validations = collect($parameters)
+            ->unique()
+            ->map(function ($validation) {
+                if ($validation === 'rfc') {
+                    return new RFCValidation();
+                } elseif ($validation === 'strict') {
+                    return new NoRFCWarningsValidation();
+                } elseif ($validation === 'dns') {
+                    return new DNSCheckValidation();
+                } elseif ($validation === 'spoof') {
+                    return new SpoofCheckValidation();
+                } elseif ($validation === 'filter') {
+                    return new FilterEmailValidation();
+                } elseif ($validation === 'filter_unicode') {
+                    return FilterEmailValidation::unicode();
+                } elseif (is_string($validation) && class_exists($validation)) {
+                    return $this->container->make($validation);
+                }
+            })
+            ->values()
+            ->all() ?: [new RFCValidation()];
+
+        return (new EmailValidator)->isValid($value, new MultipleValidationWithAnd($validations));
+    }}
+```
+
+This is how Laravel validates an email address by leveraging various **email validation** classes from `egulias/email-validation` package.
+
+## Interesting facts about this package in Laravel context
+
+-   This package was first used by Laravel in **v5.8**
+-   Pull Request to add this functionality was opened by [Leo Sjöberg](<[https://github.com/phroggyy](https://github.com/phroggyy)>) and merged by Taylor Otwell in **Nov, 2018**
+-   PR can be found [here](<[https://github.com/laravel/framework/pull/26503](https://github.com/laravel/framework/pull/26503)>)
+-   Before the addition of this package, Laravel used [filter_var](<[https://www.php.net/manual/en/function.filter-var](https://www.php.net/manual/en/function.filter-var)>) function of PHP to validate email address.
+
+---
+
+I hope you enjoyed this post. Next, we will see how Laravel uses `league/commonmark` package. You can follow me on [Twitter](https://twitter.com/Zubairmohsin33) or join my [newsletter](https://letter.zubairmohsin.dev) to keep yourself updated.
