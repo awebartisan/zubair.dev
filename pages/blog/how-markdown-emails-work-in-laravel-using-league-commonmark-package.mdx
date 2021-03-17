@@ -1,0 +1,553 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title:
+        'How markdown emails work in Laravel using `league/commonmark` package',
+    description: "Let's find out how markdown emails are rendered in Laravel.",
+    readTime: 6,
+    url:
+        'https://zubairmohsin.dev/blog/how-markdown-emails-work-in-laravel-using-league-commonmark-package',
+    canonical:
+        'https://zubairmohsin.dev/blog/how-markdown-emails-work-in-laravel-using-league-commonmark-package',
+    showDate: 'Mar 17, 2021',
+    date: new Date('2021-03-17'),
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+From the **About** section of [league/commonmark](https://github.com/thephpleague/commonmark) package:
+
+-   Highly-extensible PHP Markdown parser which fully supports the CommonMark and GFM specs.
+
+This package helps us **parse markdown** in PHP. If you are not familiar with markdown, GitHub has super helpful guide about it [here](https://guides.github.com/features/mastering-markdown/).
+
+## Mail in Laravel
+
+Laravel provides simple and easy ways to send emails. There are two options in Laravel to send emails:
+
+-   Mailables
+-   Notifications
+
+I created a poll on Twitter to see how Developers usually send emails in their Laravel apps. Based on the results, seems like **Mailable** is the go-to choice. We'll also use Mailable to explore further.
+
+(Interesting replies on this tweet, give them a read)
+
+<blockquote class="twitter-tweet" style={{ textAlign: 'center' }}>
+    <p lang="en" dir="ltr">
+        How do you usually send emails in a Laravel app? 👀
+        <a href="https://twitter.com/hashtag/Laravel?src=hash&amp;ref_src=twsrc%5Etfw">
+            #Laravel
+        </a> <a href="https://twitter.com/hashtag/PHP?src=hash&amp;ref_src=twsrc%5Etfw">#PHP</a>
+    </p>
+    &mdash; Zubair Mohsin (@Zubairmohsin33) <a href="https://twitter.com/Zubairmohsin33/status/1371510380149805056?ref_src=twsrc%5Etfw">March 15, 2021</a>
+</blockquote> <script
+    async
+    src="https://platform.twitter.com/widgets.js"
+    charset="utf-8"
+></script>
+
+## Markdown Mailables
+
+Let's generate a markdown mailable using Artisan.
+
+```bash
+> php artisan make:mail NewsletterSubscribed --markdown=emails.newsletter.subscribed
+```
+
+We get two files as a result of this command.
+
+-   `App\Mail\NewsletterSubscribed` class
+-   `resources/views/emails/newsletter/subscribed.blade.php` file
+
+Let's take a look at view file:
+
+```bash
+@component('mail::message')
+# Hello
+
+You have subscribed to our newsletter.
+
+@component('mail::button', ['url' => ''])
+Button Text
+@endcomponent
+
+Thanks,<br>
+{{ config('app.name') }}
+@endcomponent
+```
+
+We can see that there's a combination of **Blade Components** and **Markdown** in this file. These components and others are made available by Laravel, read more about components [here](https://laravel.com/docs/8.x/mail#writing-markdown-messages). When we send out this mailable, `league/commonmark` package comes into play and parse this **markdown** to HTML.
+
+## What happens when you Mail::to()→send() ?
+
+```php
+Mail::to($request->user())->send(new NewsletterSubscribed());
+```
+
+We are specifying the **recipient** in `to()` method and the **mailable** class in `send()` method.
+
+### Code Dive
+
+Let's dive into `send()` method. It leads us to `Illuminate\Mail\PendingMail` class.
+
+```php
+<?php
+
+namespace Illuminate\Mail
+
+use Illuminate\Contracts\Mail\Mailable as MailableContract;
+use Illuminate\Contracts\Mail\Mailer as MailerContract;
+
+class PendingMail
+{
+		/**
+     * The mailer instance.
+     *
+     * @var \Illuminate\Contracts\Mail\Mailer
+     */
+    protected $mailer;
+
+		/**
+     * Send a new mailable message instance.
+     *
+     * @param  \Illuminate\Contracts\Mail\Mailable  $mailable
+     * @return mixed
+     */
+    public function send(MailableContract $mailable)
+    {
+        return $this->mailer->send($this->fill($mailable));
+    }
+
+		/**
+     * Populate the mailable with the addresses.
+     *
+     * @param  \Illuminate\Contracts\Mail\Mailable  $mailable
+     * @return \Illuminate\Mail\Mailable
+     */
+    protected function fill(MailableContract $mailable)
+    {
+        return tap($mailable->to($this->to)
+            ->cc($this->cc)
+            ->bcc($this->bcc), function (MailableContract $mailable) {
+            if ($this->locale) {
+                $mailable->locale($this->locale);
+            }
+        });
+    }
+}
+```
+
+Mailable class is being filled with addresses and then its calling `send` method on the given **Mailer** instance. As we can see, `$mailer` is an instance of class which `implements` the `Mailer` contract. Where do we find its concrete class implementation?
+
+### Finding the Mailer
+
+When request comes in and Laravel registers the **ServiceProviders**, part of these providers is `Illumiate\Mail\MailServiceProvider`. Let's take a look at its `register` method.
+
+```php
+	use Illuminate\Mail\MailManager;
+
+		/**
+     * Register the service provider.
+     *
+     * @return void
+     */
+    public function register()
+    {
+        $this->registerIlluminateMailer();
+		$this->registerMarkdownRenderer();
+    }
+
+    /**
+     * Register the Illuminate mailer instance.
+     *
+     * @return void
+     */
+    protected function registerIlluminateMailer()
+    {
+        $this->app->singleton('mail.manager', function ($app) {
+            return new MailManager($app);
+        });
+
+        $this->app->bind('mailer', function ($app) {
+            return $app->make('mail.manager')->mailer();
+        });
+    }
+
+	/**
+     * Register the Markdown renderer instance.
+     *
+     * @return void
+     */
+    protected function registerMarkdownRenderer()
+    {
+        $this->app->singleton(Markdown::class, function ($app) {
+            $config = $app->make('config');
+
+            return new Markdown($app->make('view'), [
+                'theme' => $config->get('mail.markdown.theme', 'default'),
+                'paths' => $config->get('mail.markdown.paths', []),
+            ]);
+        });
+    }
+```
+
+It is binding a **singleton** of `MailManager` class and then **bind** `Mailer` by calling `mailer()` method on `mail.manager` singleton above.
+
+-   We can already see a `Markdown` class being registered. We will eventually reach to this class.
+-   Read more about `singleton()` and `bind()` binding methods in the [documentation](https://laravel.com/docs/8.x/container#binding)
+
+Let's dig into `mailer()` method of `MailManager` class.
+
+```php
+<?php
+
+namespace Illuminate\Mail;
+
+class MailManager
+{
+		/* Get a mailer instance by name.
+     *
+     * @param  string|null  $name
+     * @return \Illuminate\Mail\Mailer
+     */
+    public function mailer($name = null)
+    {
+        $name = $name ?: $this->getDefaultDriver();
+
+        return $this->mailers[$name] = $this->get($name);
+    }
+
+		/**
+     * Get the default mail driver name.
+     *
+     * @return string
+     */
+    public function getDefaultDriver()
+    {
+        return $this->app['config']['mail.driver'] ??
+            $this->app['config']['mail.default'];
+    }
+
+		/**
+     * Attempt to get the mailer from the local cache.
+     *
+     * @param  string  $name
+     * @return \Illuminate\Mail\Mailer
+     */
+    protected function get($name)
+    {
+        return $this->mailers[$name] ?? $this->resolve($name);
+    }
+
+	/**
+     * Resolve the given mailer.
+     *
+     * @param  string  $name
+     * @return \Illuminate\Mail\Mailer
+     *
+     * @throws \InvalidArgumentException
+     */
+    protected function resolve($name)
+    {
+		//ripped off version of resolve method
+
+        $config = $this->getConfig($name);
+            $mailer = new Mailer(
+            $name,
+            $this->app['view'],
+            $this->createSwiftMailer($config),
+            $this->app['events']
+	    );
+
+		return $mailer;
+
+	}
+}
+```
+
+Above code can be roughly translated to:
+
+-   Get the default **mail driver / default mailer** (which is **smtp)** then call `get()` method on it. `get()` method checks if given mailer has already been resolved ( local cache ), otherwise resolve the **concrete** class for the given mailer.
+
+**We found the `Mailer` concrete class. Yay!**
+
+It's located at `Illuminate\Mail\Mailer`. It was kind of obvious, but finding it through code-dive was fun. Alright, moving on...
+
+### The Mailer
+
+We are interested in `send()` method on the `Mailer` class. Let's take a look:
+
+```php
+<?php
+
+namespace Illuminate\Mail;
+
+use Illuminate\Contracts\Mail\Mailable as MailableContract;
+use Illuminate\Contracts\Mail\Mailer as MailerContract;
+
+class Mailer implements MailerContract
+{
+
+	/**
+     * The name that is configured for the mailer.
+     *
+     * @var string
+     */
+    protected $name;
+
+	/**
+     * Send a new message using a view.
+     *
+     * @param  \Illuminate\Contracts\Mail\Mailable|string|array  $view
+     * @param  array  $data
+     * @param  \Closure|string|null  $callback
+     * @return void
+     */
+    public function send($view, array $data = [], $callback = null)
+    {
+		if ($view instanceof MailableContract) {
+            return $this->sendMailable($view);
+        }
+
+			//.. code ripped off
+		}
+
+	/**
+     * Send the given mailable.
+     *
+     * @param  \Illuminate\Contracts\Mail\Mailable  $mailable
+     * @return mixed
+     */
+    protected function sendMailable(MailableContract $mailable)
+    {
+        return $mailable instanceof ShouldQueue
+            ? $mailable->mailer($this->name)->queue($this->queue)
+            : $mailable->mailer($this->name)->send($this);
+    }
+}
+```
+
+In the `send()` method it checks if `$view` is an instance of `Mailable` , in our case this is `true`. We are indeed working with `Mailable` and we passed a mailable from `PendingMail` class.
+
+Then it sets **Mailer** on **Mailable** class itself and then calls **send** method on the **Mailable.**
+
+### The Mailable
+
+If we were to find concrete class that implements `Mailable` class, this post will become huge.
+
+Therefore, we are just going to assume that `Illuminate\Mail\Mailable` class is what we need as our `NewsletterSubscribed` class `extends` it and it also implements `Illuminate\Contracts\Mail\Mailable` interface.
+
+```php
+<?php
+
+namespace Illuminate\Mail;
+
+use Illuminate\Container\Container;
+use Illuminate\Contracts\Mail\Mailable as MailableContract;
+
+class Mailable implements MailableContract, Renderable
+{
+	/**
+     * Set the name of the mailer that should send the message.
+     *
+     * @param  string  $mailer
+     * @return $this
+     */
+    public function mailer($mailer)
+    {
+        $this->mailer = $mailer;
+
+        return $this;
+    }
+
+	/**
+     * Send the message using the given mailer.
+     *
+     * @param  \Illuminate\Contracts\Mail\Factory|\Illuminate\Contracts\Mail\Mailer  $mailer
+     * @return void
+     */
+    public function send($mailer)
+    {
+        return $this->withLocale($this->locale, function () use ($mailer) {
+            Container::getInstance()->call([$this, 'build']);
+
+            $mailer = $mailer instanceof MailFactory
+                ? $mailer->mailer($this->mailer)
+                : $mailer;
+
+            return $mailer->send(
+                **$this->buildView(),
+                $this->buildViewData()**,
+                function ($message) {
+                    $this->buildFrom($message)
+                        ->buildRecipients($message)
+                        ->buildSubject($message)
+                        ->runCallbacks($message)
+                        ->buildAttachments($message);
+            });
+        });
+    }
+}
+```
+
+In context of our topic, `buildView()` method is of our interest. Below is its implementation and related methods.
+
+```php
+/**
+     * Build the view for the message.
+     *
+     * @return array|string
+     *
+     * @throws \ReflectionException
+     */
+    protected function buildView()
+    {
+		//code ripped off
+
+        if (isset($this->markdown)) {
+            return $this->buildMarkdownView();
+        }
+    }
+
+    /**
+     * Build the Markdown view for the message.
+     *
+     * @return array
+     *
+     * @throws \ReflectionException
+     */
+    protected function buildMarkdownView()
+    {
+        $markdown = Container::getInstance()->make(Markdown::class);
+
+        if (isset($this->theme)) {
+            $markdown->theme($this->theme);
+        }
+
+        $data = $this->buildViewData();
+
+        return [
+            'html' => $markdown->render($this->markdown, $data),
+            'text' => $this->buildMarkdownText($markdown, $data),
+        ];
+    }
+```
+
+`buildMarkdownView()` method is where it is initialising `Markdown` class from container and rendering the **markdown view** of our `NewlsetterSubscribed` mail.
+
+### The Markdown
+
+In the `Markdown` class, there are two important methods. `render` and `parse`.
+
+```php
+<?php
+
+namespace Illuminate\Mail;
+
+use Illuminate\Contracts\View\Factory as ViewFactory;
+use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
+use League\CommonMark\CommonMarkConverter;
+use League\CommonMark\Environment;
+use League\CommonMark\Extension\Table\TableExtension;
+use TijsVerkoyen\CssToInlineStyles\CssToInlineStyles;
+
+class Markdown
+{
+	/**
+     * The view factory implementation.
+     *
+     * @var \Illuminate\Contracts\View\Factory
+     */
+    protected $view;
+
+    protected $theme = 'default';
+
+    public function __construct(ViewFactory $view, array $options = [])
+    {
+        $this->view = $view;
+        $this->theme = $options['theme'] ?? 'default';
+        $this->loadComponentsFrom($options['paths'] ?? []);
+    }
+
+	/**
+     * Render the Markdown template into HTML.
+     *
+     * @param  string  $view
+     * @param  array  $data
+     * @param  \TijsVerkoyen\CssToInlineStyles\CssToInlineStyles|null  $inliner
+     * @return \Illuminate\Support\HtmlString
+     */
+    public function render($view, array $data = [], $inliner = null)
+    {
+        $this->view->flushFinderCache();
+
+        $contents = $this->view->replaceNamespace(
+            'mail',
+            $this->htmlComponentPaths()
+        )->make($view, $data)->render();
+
+        if ($this->view->exists($this->theme)) {
+            $theme = $this->theme;
+        } else {
+            $theme = Str::contains($this->theme, '::')
+                ? $this->theme
+                : 'mail::themes.' . $this->theme;
+        }
+
+        return new HtmlString(($inliner ?: new CssToInlineStyles)->convert(
+            $contents,
+            $this->view->make($theme, $data)->render()
+        ));
+    }
+
+	/**
+     * Parse the given Markdown text into HTML.
+     *
+     * @param  string  $text
+     * @return \Illuminate\Support\HtmlString
+     */
+    public static function parse($text)
+    {
+        $environment = Environment::createCommonMarkEnvironment();
+
+        $environment->addExtension(new TableExtension);
+
+        $converter = new CommonMarkConverter([
+            'allow_unsafe_links' => false,
+        ], $environment);
+
+        return new HtmlString($converter->convertToHtml($text));
+    }
+}
+```
+
+And we can finally see inside the `parse()` method that it utilizes classes from `league/commonmark` package like `CommonMarkConverter` and `TableExtension` etc.
+
+But we never called `parse()` method from anywhere? And we can see nothing inside the `render()` method related to markdown either?
+
+Well, `parse()` method is called from within the email views. Our `subscribed.blade.php` view uses `@component('mail::message')` which in-turn uses `@component('mail::layout')` , and if we take a look at `layout` component at `Mail\resources\views\html\layout.blade.php` , we see an HTML template with table layout and some styling.
+
+There we see the following code in which `parse()` method is being called.
+
+```php
+<td class="content-cell">
+{{ Illuminate\Mail\Markdown::parse($slot) }}
+
+{{ $subcopy ?? '' }}
+</td>
+```
+
+When the `subscribed` view is rendered, `parse` gets called and our markdown content is parsed using `league/commonmark` package.
+
+## Interesting facts about Markdown in Laravel
+
+-   Laravel started supporting **Markdown** syntax in emails \***\*in **version 5.4\*\*
+-   The first package used to parse markdown was [erusev/parsedown](https://github.com/erusev/parsedown)
+-   In Laravel **v6.0,** they switched from `erusev/parsedown` to `league/commonmark` for **safety features.**
+-   **Taylor Otwell** removed `erusev/parsedown` from `composer.json` and added `league/commonmark` on **30 Dec, 2019.**
+-   Commit on GitHub can be found on this [link](https://github.com/laravel/framework/commit/83dfd84b3868a8eec375fb7550508b5b1b68ded3#diff-d2ab9925cad7eac58e0ff4cc0d251a937ecf49e4b6bf57f8b95aab76648a9d34)
+
+---
+
+I hope you enjoyed this post. Next, we will see how Laravel uses `league/flysystem` package. You can follow me on [Twitter](https://twitter.com/Zubairmohsin33) or join my [newsletter](https://letter.zubairmohsin.dev) to keep yourself updated.
