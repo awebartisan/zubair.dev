@@ -1,0 +1,420 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title:
+        'How Laravel uses `league/flysystem` package to create robust Filesystem',
+    description:
+        "Let's take look at how Laravel uses `league/flysystem` package to create a robust file storage system.",
+    readTime: 3,
+    url:
+        'https://zubairmohsin.dev/blog/how-laravel-uses-league-flysystem-package-to-create-robust-filesystem',
+    canonical:
+        'https://zubairmohsin.dev/blog/how-laravel-uses-league-flysystem-package-to-create-robust-filesystem',
+    showDate: 'Mar 20, 2021',
+    date: new Date('2021-03-20'),
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+From the **About** section on GitHub of [league/flysystem](https://github.com/thephpleague/flysystem) package:
+
+-   Flysystem is a file storage library for PHP. It provides one interface to interact with many types of filesystems.
+
+Thanks to this package, Laravel supports working with several filesystems, for example, **local disk**, **FTP**, **SFTP** and **Amazon S3.** We just have to change some configurations in `config/filesystems.php` file. We can even create our own filesystem driver with minimal effort.
+
+Without further ado, let's figure how this package is used in Laravel.
+
+## Code Dive
+
+In this blogpost, I am going to take a different approach of code-dive as compared to previous blogposts. I will start from the service provider of the filesystem in Laravel to see what happens when framework is booted.
+
+`laravel/framework` repository has separate directories for each major module. We can easily find **Filesystem** module under `vendor/laravel/framework/src/Illuminate/Filesystem`
+
+Let's take a look at `FilesystemServiceProvider` class.
+
+```php
+<?php
+
+namespace Illuminate\Filesystem;
+
+use Illuminate\Support\ServiceProvider;
+
+class FilesystemServiceProvider extends ServiceProvider
+{
+    /**
+     * Register the service provider.
+     *
+     * @return void
+     */
+    public function register()
+    {
+        $this->registerNativeFilesystem();
+
+        $this->registerFlysystem();
+    }
+
+    /**
+     * Register the native filesystem implementation.
+     *
+     * @return void
+     */
+    protected function registerNativeFilesystem()
+    {
+        $this->app->singleton('files', function () {
+            return new Filesystem;
+        });
+    }
+
+    /**
+     * Register the driver based filesystem.
+     *
+     * @return void
+     */
+    protected function registerFlysystem()
+    {
+        $this->registerManager();
+
+        $this->app->singleton('filesystem.disk', function ($app) {
+            return $app['filesystem']->disk($this->getDefaultDriver());
+        });
+
+        $this->app->singleton('filesystem.cloud', function ($app) {
+            return $app['filesystem']->disk($this->getCloudDriver());
+        });
+    }
+
+    /**
+     * Register the filesystem manager.
+     *
+     * @return void
+     */
+    protected function registerManager()
+    {
+        $this->app->singleton('filesystem', function ($app) {
+            return new FilesystemManager($app);
+        });
+    }
+
+    /**
+     * Get the default file driver.
+     *
+     * @return string
+     */
+    protected function getDefaultDriver()
+    {
+        return $this->app['config']['filesystems.default'];
+    }
+
+    /**
+     * Get the default cloud based file driver.
+     *
+     * @return string
+     */
+    protected function getCloudDriver()
+    {
+        return $this->app['config']['filesystems.cloud'];
+    }
+}
+```
+
+Laravel first registers **Native Filesystem** and then explicitly register **Flysystem.** We are interested in **flysystem** so we will dig into that.
+
+-   Native Filesystem uses native PHP file methods under-the-hood and are available via `File` facade, e.g. `File::put()`
+
+Inside `registerManager()` method, we can see that a **singleton** is being bind to the container for `filesystem` string and it returns an instance of `FilesystemManager` class when resolved. After this, it's also binding the **default (local) filesystem driver** to the container.
+
+### The FilesystemManager
+
+`FilesystemManager` class has methods that deal with instantiation of **disk/driver** class. Below I have only given the declarations of related methods. We'll look into their implementations later. We can see classes ( adapters ) from `league/flysystem` package here.
+
+```php
+<?php
+
+namespace Illuminate\Filesystem;
+
+use League\Flysystem\Adapter\Ftp as FtpAdapter;
+use League\Flysystem\Adapter\Local as LocalAdapter;
+use League\Flysystem\AdapterInterface;
+use League\Flysystem\AwsS3v3\AwsS3Adapter as S3Adapter;
+use League\Flysystem\Cached\CachedAdapter;
+use League\Flysystem\Cached\Storage\Memory as MemoryStore;
+use League\Flysystem\Filesystem as Flysystem;
+use League\Flysystem\FilesystemInterface;
+use League\Flysystem\Sftp\SftpAdapter;
+
+/**
+ * @mixin \Illuminate\Contracts\Filesystem\Filesystem
+ */
+class FilesystemManager implements FactoryContract
+{
+    /**
+     * Get a filesystem instance.
+     *
+     * @param  string|null  $name
+     * @return \Illuminate\Contracts\Filesystem\Filesystem
+     */
+    public function disk($name = null);
+
+		/**
+     * Attempt to get the disk from the local cache.
+     *
+     * @param  string  $name
+     * @return \Illuminate\Contracts\Filesystem\Filesystem
+     */
+    protected function get($name);
+
+		/**
+     * Resolve the given disk.
+     *
+     * @param  string  $name
+     * @return \Illuminate\Contracts\Filesystem\Filesystem
+     *
+     * @throws \InvalidArgumentException
+     */
+    protected function resolve($name);
+
+		/**
+     * Create an instance of the local driver.
+     *
+     * @param  array  $config
+     * @return \Illuminate\Contracts\Filesystem\Filesystem
+     */
+    public function createLocalDriver(array $config);
+
+		/**
+     * Adapt the filesystem implementation.
+     *
+     * @param  \League\Flysystem\FilesystemInterface  $filesystem
+     * @return \Illuminate\Contracts\Filesystem\Filesystem
+     */
+    protected function adapt(FilesystemInterface $filesystem);
+}
+```
+
+### But, how it all works?
+
+Laravel makes it extremely simple to interact with filesystem. In below snippet, we are creating a file named `example.txt` with `Contents` string and putting it on `local` disk.
+
+```php
+use Illuminate\Support\Facades\Storage;
+
+Storage::disk('local')->put('example.txt', 'Contents');
+```
+
+Let's try to understand the above code one part at a time.
+
+### Storage Facade
+
+-   I am assuming reader knows how Laravel Facade pattern works as that is out of scope of this blogpost.
+
+```php
+<?php
+
+namespace Illuminate\Support\Facades;
+
+use Illuminate\Filesystem\Filesystem;
+
+class Storage extends Facade
+{
+		/**
+     * Get the registered name of the component.
+     *
+     * @return string
+     */
+    protected static function getFacadeAccessor()
+    {
+        return 'filesystem';
+    }
+}
+```
+
+We can see inside `getFacadeAccessor()` it returns `filesystem` string. Which is **exactly** the same as we saw earlier inside `FilesystemServiceProvider` inside `registerManager()` method.
+
+-   We can safely conclude that, by using `Storage` facade, we are basically interacting with `FilesystemManager` class.
+
+### Storage::disk('local')
+
+`disk()` method on `FilesystemManager` class receives the **disk** name, which in this case is **local** ( it is also default ) and try to resolve an instance of that disk based `Filesystem` class.
+
+```php
+		/**
+     * Get a filesystem instance.
+     *
+     * @param  string|null  $name
+     * @return \Illuminate\Contracts\Filesystem\Filesystem
+     */
+    public function disk($name = null)
+    {
+        $name = $name ?: $this->getDefaultDriver();
+
+        return $this->disks[$name] = $this->get($name);
+    }
+
+		/**
+     * Attempt to get the disk from the local cache.
+     *
+     * @param  string  $name
+     * @return \Illuminate\Contracts\Filesystem\Filesystem
+     */
+    protected function get($name)
+    {
+        return $this->disks[$name] ?? $this->resolve($name);
+    }
+
+    /**
+     * Resolve the given disk.
+     *
+     * @param  string  $name
+     * @return \Illuminate\Contracts\Filesystem\Filesystem
+     *
+     * @throws \InvalidArgumentException
+     */
+    protected function resolve($name)
+    {
+        $config = $this->getConfig($name);
+
+        if (empty($config['driver'])) {
+            throw new InvalidArgumentException(
+				"Disk [{$name}] does not have a configured driver."
+			);
+        }
+
+        $name = $config['driver'];
+
+        $driverMethod = 'create' . ucfirst($name) . 'Driver';
+
+        if (!method_exists($this, $driverMethod)) {
+            throw new InvalidArgumentException(
+				"Driver [{$name}] is not supported."
+			);
+        }
+
+        return $this->{$driverMethod}($config);
+    }
+```
+
+If we look at `resolve()` method, we can see that its loading the `config` for the given **disk** and creating a method name dynamically.
+
+```php
+$driverMethod = 'create' . ucfirst($name) . 'Driver';
+```
+
+In our case, it will result in `createLocalDriver()`. We can find this method inside `FilesystemManager` class along with others like `createS3Driver()`, `createSftpDriver()` .
+
+```php
+use League\Flysystem\Filesystem as Flysystem;
+use League\Flysystem\Adapter\Local as LocalAdapter;
+
+/**
+ * Create an instance of the local driver.
+ *
+ * @param  array  $config
+ * @return \Illuminate\Contracts\Filesystem\Filesystem
+ */
+public function createLocalDriver(array $config)
+{
+    $permissions = $config['permissions'] ?? [];
+
+    $links = ($config['links'] ?? null) === 'skip'
+        ? LocalAdapter::SKIP_LINKS
+        : LocalAdapter::DISALLOW_LINKS;
+
+    return $this->adapt($this->createFlysystem(new LocalAdapter(
+        $config['root'],
+        $config['lock'] ?? LOCK_EX,
+        $links,
+        $permissions
+    ), $config));
+}
+
+/**
+ * Create a Flysystem instance with the given adapter.
+ *
+ * @param  \League\Flysystem\AdapterInterface  $adapter
+ * @param  array  $config
+ * @return \League\Flysystem\FilesystemInterface
+ */
+protected function createFlysystem(AdapterInterface $adapter, array $config)
+{
+    $config = Arr::only($config, ['visibility', 'disable_asserts', 'url']);
+
+    return new Flysystem($adapter, count($config) > 0 ? $config : null);
+}
+
+/**
+ * Adapt the filesystem implementation.
+ *
+ * @param  \League\Flysystem\FilesystemInterface  $filesystem
+ * @return \Illuminate\Contracts\Filesystem\Filesystem
+ */
+protected function adapt(FilesystemInterface $filesystem)
+{
+    return new FilesystemAdapter($filesystem);
+}
+```
+
+Inside `createLocalDriver()` method it is creating a new instance of `Local`adapter from **flysystem** package and then pass that adapter to base class `Filesystem` (aliased as `Flysystem`) of **flysystem** package.
+
+In the end, Laravel wraps the base class instance in its own implementation inside `adapt()` method. `FilesystemAdapter` class can be found in the same directory as `FilesystemManager` class.
+
+### Storage::disk('local')→put()
+
+By the end of `disk()` method execution, we have `FilesystemAdapter` instance. So we can safely assume that `put()` method must be inside `FilesystemAdapter` class.
+
+```php
+<?php
+
+namespace Illuminate\Filesystem;
+
+class FilesystemAdapter
+{
+		/**
+     * Write the contents of a file.
+     *
+     * @param  string  $path
+     * @param  string|resource  $contents
+     * @param  mixed  $options
+     * @return bool
+     */
+    public function put($path, $contents, $options = [])
+    {
+        $options = is_string($options)
+                     ? ['visibility' => $options]
+                     : (array) $options;
+
+        if ($contents instanceof File ||
+            $contents instanceof UploadedFile) {
+            return $this->putFile($path, $contents, $options);
+        }
+
+        if ($contents instanceof StreamInterface) {
+            return $this->driver->putStream(
+							$path, $contents->detach(), $options
+						);
+        }
+
+        return is_resource($contents)
+                ? $this->driver->putStream($path, $contents, $options)
+                : $this->driver->put($path, $contents, $options);
+    }
+}
+```
+
+Other commonly used methods like `Storage::get()`, `Storage::delete()` , `Storage::download()` can also be found in `FilesystemAdapter()` class.
+
+[Link to source code](https://github.com/laravel/framework/blob/8.x/src/Illuminate/Filesystem/FilesystemAdapter.php) of the class.
+
+This is how **Laravel** leverages `flysystem` package to provide fluent and easy-to-use Filesystem API.
+
+## Interesting facts about Flysystem in Laravel context
+
+-   `league/flysystem` package was first added to Laravel in **v5.0**
+-   Taylor Otwell made the [commit](https://github.com/laravel/framework/commit/9da2d96f07098f5dc2b2d796291af5e2d3b70026#diff-d2ab9925cad7eac58e0ff4cc0d251a937ecf49e4b6bf57f8b95aab76648a9d34) "Working on filesystem" on 24 Aug, 2014
+-   Initial version of this packaged used in Laravel was `v0.5` . It was upgraded to `v1.0` in Dec, 2014.
+-   Initially, **Rackspace** was also included along with **AWS S3** as cloud filesystems.
+-   `league/flysystem` package has major changes in `v2` . Laravel **v9** is expected to contain `v2` of this package.
+-   [Pull request](https://github.com/laravel/framework/pull/33612) by Dries Vints already merged into `master` branch, which upgrades this package to `v2` in Laravel `v9`.
+
+---
+
+I hope you enjoyed this post. Next, we will see how Laravel uses `monolog/monolog` package. You can follow me on [Twitter](https://twitter.com/Zubairmohsin33) or join my [newsletter](https://letter.zubairmohsin.dev) for more content.
