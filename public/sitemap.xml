@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://zubairmohsin.dev/about</loc>
+  </url>
+
+  <url>
+    <loc>https://zubairmohsin.dev/contact</loc>
+  </url>
+
+  <url>
+    <loc>https://zubairmohsin.dev</loc>
+  </url>
+
+  <url>
+    <loc>https://zubairmohsin.dev/projects</loc>
+  </url>
+
+  <url>
+    <loc>https://zubairmohsin.dev/blog/how-email-address-validation-works-in-laravel-using-egulias-email-validation-package</loc>
+  </url>
+
+  <url>
+    <loc>https://zubairmohsin.dev/blog/how-i-messed-up-my-newsletter</loc>
+  </url>
+
+  <url>
+    <loc
+      >https://zubairmohsin.dev/blog/how-laravel-uses-doctrine-inflector-package</loc
+    >
+  </url>
+
+  <url>
+    <loc
+      >https://zubairmohsin.dev/blog/how-laravel-uses-dragonmantank-cronexpression-package-in-task-scheduling</loc
+    >
+  </url>
+
+  <url>
+    <loc
+      >https://zubairmohsin.dev/blog/how-laravel-uses-league-flysystem-package-to-create-robust-filesystem</loc
+    >
+  </url>
+
+  <url>
+    <loc
+      >https://zubairmohsin.dev/blog/how-markdown-emails-work-in-laravel-using-league-commonmark-package</loc
+    >
+  </url>
+
+  <url>
+    <loc>https://zubairmohsin.dev/blog/index</loc>
+  </url>
+
+  <url>
+    <loc
+      >https://zubairmohsin.dev/blog/laracon-online-2021-talks-twitter-thread-links</loc
+    >
+  </url>
+</urlset>
