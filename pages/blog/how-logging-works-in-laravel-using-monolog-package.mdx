@@ -1,0 +1,280 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title: 'How Logging works in Laravel using `monolog/monolog` package',
+    description:
+        "Let's take look at how Laravel uses `monolog/monolog` package to create powerful multi-channel logging system.",
+    readTime: 3,
+    url:
+        'https://zubairmohsin.dev/blog/how-logging-works-in-laravel-using-monolog-package',
+    canonical:
+        'https://zubairmohsin.dev/blog/how-logging-works-in-laravel-using-monolog-package',
+    showDate: 'Mar 25, 2021',
+    date: new Date('2021-03-25'),
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+From the GitHub About section of [monolog](https://github.com/Seldaek/monolog) package:
+
+-   Sends your logs to files, sockets, inboxes, databases and various web services.
+
+Take a look at [Handlers](https://github.com/Seldaek/monolog/tree/main/src/Monolog/Handler) directory of this package to see how many services it supports out of the box 🤯
+
+## Code Dive
+
+In this blogpost, we'll start from the example so that we can get a taste of **diving,** instead of directly jumping to ServiceProvider. Let's start with an example usage of logging in Laravel.
+
+```php
+use Illuminate\Support\Facades\Log;
+
+Log::info('hello world', ['data' => 'hello world again']);
+```
+
+First of all, let's jump to `Log` facade where we can see its returning a string `log`.
+
+-   I am assuming reader knows how Facade works in Laravel.
+
+### Log facade
+
+```php
+class Log extends Facade
+{
+    /**
+     * Get the registered name of the component.
+     *
+     * @return string
+     */
+    protected static function getFacadeAccessor()
+    {
+        return 'log';
+    }
+}
+```
+
+We know that this string `log` has been **bound** already to a concrete implementation inside service container using a dedicated ServiceProvider. By following the convention we can safely assume that it must be `LogServiceProvider`.
+
+Let's take another approach this time and ask the **container** to tell us the concrete class behind `log` string.
+
+How do we do it? Pretty easy, using the `app()` helper.
+
+```php
+app('log');
+```
+
+If we `dd()` the result, we get:
+
+```php
+Illuminate\Log\LogManager {#178 ▼
+#app: Illuminate\Foundation\Application {#1 ▶}
+#channels: array:2 [▶]
+#customCreators: array:1 [▶]
+#dateFormat: "Y-m-d H:i:s"
+#levels: array:8 [▶] }
+```
+
+There we have it, class behind `log` string. To verify that we got the correct class, let's take a look at `LogServiceProvider` too.
+
+```php
+<?php
+
+namespace Illuminate\Log;
+
+use Illuminate\Support\ServiceProvider;
+
+class LogServiceProvider extends ServiceProvider
+{
+    /**
+     * Register the service provider.
+     *
+     * @return void
+     */
+    public function register()
+    {
+        $this->app->singleton('log', function ($app) {
+            return new LogManager($app);
+        });
+    }
+}
+```
+
+### Log::info()
+
+Now that we know `Log` facade uses `LogManager` class under-the-hood, we can safely assume that `info()` must exist on this class.
+
+```php
+/**
+ * Interesting events.
+ *
+ * Example: User logs in, SQL logs.
+ *
+ * @param  string  $message
+ * @param  array  $context
+ *
+ * @return void
+ */
+public function info($message, array $context = [])
+{
+    $this->driver()->info($message, $context);
+}
+```
+
+`info()` method gets the `driver()` and calls `info()` method on that driver. Let's dig into `driver()` method and all its related methods.
+
+```php
+		/**
+     * Get a log driver instance.
+     *
+     * @param  string|null  $driver
+     * @return \Psr\Log\LoggerInterface
+     */
+    public function driver($driver = null)
+    {
+        return $this->get($driver ?? $this->getDefaultDriver());
+    }
+
+		/**
+     * Get the default log driver name.
+     *
+     * @return string
+     */
+    public function getDefaultDriver()
+    {
+        return $this->app['config']['logging.default'];
+    }
+
+		/**
+     * Attempt to get the log from the local cache.
+     *
+     * @param  string  $name
+     * @return \Psr\Log\LoggerInterface
+     */
+    protected function get($name)
+    {
+        try {
+            return $this->channels[$name] ?? with(
+                $this->resolve($name),
+                function ($logger) use ($name) {
+                    return $this->channels[$name] = $this->tap(
+                        $name,
+                        new Logger($logger, $this->app['events'])
+                    );
+                }
+            );
+        } catch (Throwable $e) {
+            return tap(
+                $this->createEmergencyLogger(),
+                function ($logger) use ($e) {
+                    $logger->emergency(
+                        'Using emergency logger.',
+                        ['exception' => $e,]
+                    );
+                }
+            );
+        }
+    }
+```
+
+The `driver()` method is getting the `default` driver from `config/logging.php` file. Laravel supports multi-channel logging, and each **channel** has its own **driver.** For the sake of simplicity, we'll consider `single` as our default channel with below config:
+
+```php
+'single' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/laravel.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+        ],
+```
+
+Inside the `get()` method above, it's resolving the given **channel driver** by name and **applying taps** on it. (Read more about [taps](https://laravel.com/docs/8.x/logging#customizing-monolog-for-channels) in the docs). If it can't resolve the channel driver, it creates an **emergency logger** which writes to `laravel.log` file. How can this happen? If you misspelled your channel name or driver name.
+
+### resolve() method
+
+```php
+/**
+ * Resolve the given log instance by name.
+ *
+ * @param  string  $name
+ * @return \Psr\Log\LoggerInterface
+ *
+ * @throws \InvalidArgumentException
+ */
+protected function resolve($name)
+{
+    $config = $this->configurationFor($name);
+
+    if (is_null($config)) {
+        throw new InvalidArgumentException("Log [{$name}] is not defined.");
+    }
+
+    $driverMethod = 'create' . ucfirst($config['driver']) . 'Driver';
+
+    if (method_exists($this, $driverMethod)) {
+        return $this->{$driverMethod}($config);
+    }
+
+    throw new InvalidArgumentException(
+        "Driver [{$config['driver']}] is not supported."
+    );
+}
+```
+
+It's getting the configuration for given driver and then creating a **method name** dynamically. In our case `$name = 'single'` so the `$driverMethod = 'createSingleDriver'` . After that, its calling that method with its configuration.
+
+```php
+use Monolog\Logger as Monolog;
+use Monolog\Handler\StreamHandler;
+
+/**
+ * Create an instance of the single file log driver.
+ *
+ * @param  array  $config
+ * @return \Psr\Log\LoggerInterface
+ */
+protected function createSingleDriver(array $config)
+{
+    return new Monolog($this->parseChannel($config), [
+        $this->prepareHandler(
+            new StreamHandler(
+                $config['path'],
+                $this->level($config),
+                $config['bubble'] ?? true,
+                $config['permission'] ?? null,
+                $config['locking'] ?? false
+            ),
+            $config
+        ),
+    ]);
+}
+```
+
+Here we can see that a new instance of `Monolog\Logger` is returned with **channel name** and a **handler** which also provided by **monolog** package.
+
+For the sake of understanding, in the end `input()` method is called on `Monolog\Logger` class.
+
+```php
+/**
+ * Adds a log record at the INFO level.
+ *
+ * This method allows for compatibility with common interfaces.
+ *
+ * @param string  $message The log message
+ * @param mixed[] $context The log context
+ */
+public function info($message, array $context = []): void
+{
+    $this->addRecord(static::INFO, (string) $message, $context);
+}
+```
+
+`addRecord` method is responsible for writing log record in the file. How it writes to the file is out of scope of this blogpost.
+
+## Interesting facts about Monolog in Laravel context
+
+-   This package has been part of Laravel since the beginning ( maybe ).
+-   [Link](https://github.com/laravel/framework/commit/de69bb287c5017d1acb7d47a6db1dedf578036d6#diff-d2ab9925cad7eac58e0ff4cc0d251a937ecf49e4b6bf57f8b95aab76648a9d34) to very first commit of `laravel/framework` on GitHub made by **Taylor Otwell** on
+    **11 Jan, 2013** confirms the above statement.
+-   On GitHub, we only have access to version `4.0` of `laravel/framework`, so, not sure if this package was part of Laravel in versions earlier than `4.0`.
+
+---
+
+I hope you enjoyed this post. Next, we will see how Laravel uses `monolog/monolog` package. You can follow me on [Twitter](https://twitter.com/Zubairmohsin33) or join my [newsletter](https://letter.zubairmohsin.dev) for more content.

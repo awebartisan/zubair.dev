@@ -17,7 +17,9 @@
   </url>
 
   <url>
-    <loc>https://zubairmohsin.dev/blog/how-email-address-validation-works-in-laravel-using-egulias-email-validation-package</loc>
+    <loc
+      >https://zubairmohsin.dev/blog/how-email-address-validation-works-in-laravel-using-egulias-email-validation-package</loc
+    >
   </url>
 
   <url>
@@ -39,6 +41,12 @@
   <url>
     <loc
       >https://zubairmohsin.dev/blog/how-laravel-uses-league-flysystem-package-to-create-robust-filesystem</loc
+    >
+  </url>
+
+  <url>
+    <loc
+      >https://zubairmohsin.dev/blog/how-logging-works-in-laravel-using-monolog-package</loc
     >
   </url>
 
