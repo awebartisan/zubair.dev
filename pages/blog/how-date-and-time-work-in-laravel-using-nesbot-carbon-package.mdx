@@ -1,0 +1,273 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title: 'How date and time work in Laravel using `nesbot/carbon` package',
+    description:
+        "Let's take a look at how Laravel uses nesbot/carbon package to provide easy API for date and time manipulation.",
+    readTime: 3,
+    url:
+        'https://zubairmohsin.dev/blog/how-date-and-time-work-in-laravel-using-nesbot-carbon-package',
+    canonical:
+        'https://zubairmohsin.dev/blog/how-date-and-time-work-in-laravel-using-nesbot-carbon-package',
+    showDate: 'Mar 29, 2021',
+    date: new Date('2021-03-29'),
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+From the About section of [nesbot/carbon](https://github.com/briannesbitt/Carbon) package on GitHub:
+
+- A simple PHP API extension for DateTime.
+
+It is an extension of  PHP's native `DateTime` object. It adds lots of cool stuff onto `DateTime`and makes it easier to do date and time manipulations.
+
+Let's see how Laravel uses this package to provide even more simpler abstraction such as:
+
+```php
+$now = now(); // returns current date and time as Carbon instance
+```
+
+## Code Dive
+
+Let's start from definition of `now()` method. It can be found in `Illuminate\Foundation\helpers.php` file.
+
+```php
+use Illuminate\Support\Facades\Date;
+
+/**
+ * Create a new Carbon instance for the current time.
+ *
+ * @param  \DateTimeZone|string|null  $tz
+ * @return \Illuminate\Support\Carbon
+ */
+function now($tz = null)
+{
+    return Date::now($tz);
+}
+```
+
+We can see that its calling `now()` method on `Date` facade. 
+
+### Date facade
+
+```php
+namespace Illuminate\Support\Facades;
+
+use Illuminate\Support\DateFactory;
+
+class Date extends Facade
+{
+    const DEFAULT_FACADE = DateFactory::class;
+
+    /**
+     * Get the registered name of the component.
+     *
+     * @return string
+     *
+     * @throws \RuntimeException
+     */
+    protected static function getFacadeAccessor()
+    {
+        return 'date';
+    }
+
+    /**
+     * Resolve the facade root instance from the container.
+     *
+     * @param  string  $name
+     * @return mixed
+     */
+    protected static function resolveFacadeInstance($name)
+    {
+        if (! isset(static::$resolvedInstance[$name]) && 
+			! isset(static::$app, static::$app[$name])) {
+
+            $class = static::DEFAULT_FACADE;
+
+            static::swap(new $class);
+        }
+
+        return parent::resolveFacadeInstance($name);
+    }
+}
+```
+
+We have a typical `getFacadeAccessor` method that returns a string (`date`). But there are few other things that we haven't seen before. `const DEFAULT_FACADE` and `resolveFacadeInstance` method.
+
+Since this is not a module like `Log` or `Scheduling` etc, there is no separate **ServiceProvider** for this to perform service container binding. Therefore inside `resolveFacadeInstance` method it is swapping the underlying instance behind `Date` facade to `DateFactory` class.
+
+We can also confirm this by using `app()` helper like below:
+
+```php
+app('date'); // returns instance of `Illuminate\Support\DateFactory` class 
+```
+
+### DateFactroy class
+
+Below is a ripped off version of `DateFactory` class which helps us understand implementation detail behind `now()` helper method. This class has other stuff too, see full implementation [here](https://github.com/laravel/framework/blob/8.x/src/Illuminate/Support/DateFactory.php).
+
+```php
+use Illuminate\Support\Carbon;
+
+class DateFactory
+{
+    /**
+     * The default class that will be used for all created dates.
+     *
+     * @var string
+     */
+    const DEFAULT_CLASS_NAME = Carbon::class;
+
+    /**
+     * The type (class) of dates that should be created.
+     *
+     * @var string
+     */
+    protected static $dateClass;
+
+    /**
+     * Handle dynamic calls to generate dates.
+     *
+     * @param  string  $method
+     * @param  array  $parameters
+     * @return mixed
+     *
+     * @throws \RuntimeException
+     */
+    public function __call($method, $parameters)
+    {
+        $defaultClassName = static::DEFAULT_CLASS_NAME;
+
+        $dateClass = static::$dateClass ?: $defaultClassName;
+
+        // Check if date can be created using public class method...
+        if (
+            method_exists($dateClass, $method) ||
+            $dateClass::hasMacro($method)
+        ) {
+            return $dateClass::$method(...$parameters);
+        }
+    }
+}
+```
+
+Since `now()` method does not exist on this class and we are also in `object` context from `Date` facade, therefore, `__call()` magic method will be triggered when we do `Date::now()`. 
+
+Inside `__call()` method we can see that `$dateClass` is being set to `Illuminate\Support\Carbon` class. After that it checks if given method ( `now()` ) exists on that class or this method is a **macro.** Once decided, it calls that **method** on `Illuminate\Support\Carbon` class.
+
+### Illuminate\Support\Carbon
+
+```php
+<?php
+
+namespace Illuminate\Support;
+
+use Carbon\Carbon as BaseCarbon;
+use Carbon\CarbonImmutable as BaseCarbonImmutable;
+
+class Carbon extends BaseCarbon
+{
+}
+```
+
+Here we can see that this class extends `Carbon\Carbon` class from `nesbot/carbon` package. It can be considered as wrapper class around `Carbon\Carbon` which allows you to do interesting stuff like adding **Macros.** 
+
+### Finding now() method
+
+With above findings we can safely assume that `now()` method should be on `Carbon\Carbon` class. But exactly where? Let's find out.
+
+```php
+use Carbon\Traits\Date;
+
+class Carbon extends DateTime implements CarbonInterface
+{
+    use Date;
+
+    /**
+     * Returns true if the current class/instance is mutable.
+     *
+     * @return bool
+     */
+    public static function isMutable()
+    {
+        return true;
+    }
+}
+```
+
+This class extends PHP's native `DateTime` class and also uses a `Date` trait. Since `now()` method does not exist on `DateTime` class, it must be inside the `Date` trait.
+
+```php
+<?php
+
+namespace Carbon\Traits;
+
+use Carbon\Traits\Creator;
+
+trait Date
+{
+	use Creator;
+}
+```
+
+To my surprise, it was further inside a trait called `Creator` which is being used inside `Date` trait.
+
+```php
+<?php
+
+namespace Carbon\Traits;
+
+trait Creator
+{
+	/**
+     * Create a new Carbon instance.
+     *
+     * Please see the testing aids section (specifically static::setTestNow())
+     * for more on the possibility of this constructor returning a test instance.
+     *
+     * @param DateTimeInterface|string|null $time
+     * @param DateTimeZone|string|null      $tz
+     *
+     * @throws InvalidFormatException
+     */
+    public function __construct($time = null, $tz = null)
+    {
+        try {
+            parent::__construct(
+                $time ?: 'now',
+                static::safeCreateDateTimeZone($tz) ?: null
+            );
+        } catch (Exception $exception) {
+            throw new InvalidFormatException(
+                $exception->getMessage(), 0, $exception
+            );
+        }
+    }
+
+	/**
+     * Get a Carbon instance for the current date and time.
+     *
+     * @param DateTimeZone|string|null $tz
+     *
+     * @return static
+     */
+    public static function now($tz = null)
+    {
+        return new static(null, $tz);
+    }
+}
+```
+
+Here we can finally see the `now()` method's definition. It is returning a new `Carbon\Carbon` instance using **static constructor** approach. I included the `__construct` method here to highlight the `parent::__construct` being called on PHP's native `DateTime` class. 
+
+Therefore the About section of this package says **extension** of `DateTime` API.
+
+## Interesting facts about `nesbot/carbon` package in Laravel
+
+- This package was first added in Laravel **v4.0** on **19 Apr, 2013** by [Kapil Verma](https://github.com/kapv89)
+- `v2` of carbon package was first supported in Laravel `v5.8` and then support for `v1` of the package was completely dropped in Laravel `v6.0`
+- `Carbon\Carbon` class wrapped by `Illuminate\Support\Carbon` class in Laravel `v5.5` to make it **Macroable.** Pull Request can be found [here](https://github.com/laravel/framework/pull/19771).
+
+---
+
+I hope you enjoyed this post. Next, we will see how Laravel uses `opis/closure` package. You can follow me on [Twitter](https://twitter.com/Zubairmohsin33) or join my [newsletter](https://letter.zubairmohsin.dev) for more content.
