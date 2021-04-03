@@ -1,0 +1,243 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title: 'How closures are serialized in Laravel using `opis/closure` package',
+    description:
+        "Let's take a look at how Laravel uses opis/closure to serialize closures while dispatching them to queues.",
+    readTime: 3,
+    url:
+        'https://zubairmohsin.dev/blog/how-date-and-time-work-in-laravel-using-nesbot-carbon-package',
+    canonical:
+        'https://zubairmohsin.dev/blog/how-date-and-time-work-in-laravel-using-nesbot-carbon-package',
+    showDate: 'Apr 3, 2021',
+    date: new Date('2021-04-03'),
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+
+From the About section of [opis/closure](https://github.com/opis/closure) package on GitHub:
+
+> Serialize closures (anonymous functions)
+
+Its pretty clear that it helps us serialize closures ( anonymous functions ) in PHP. Because PHP natively does not support serializing closures. It throws following error when you try to serialize a closure:
+
+> Exception with message 'Serialization of 'Closure' is not allowed'
+
+Let's see how and where Laravel framework uses this package and where it needs to serialize and closures.
+
+## Code Dive
+
+If we first look at the package [itself](https://github.com/opis/closure/tree/master/src), we can see that there are bunch of classes. `SerializableClosure.php` looks like the main class of this package. Also, there's no **ServiceProvider** for this package which means its not a Laravel package but a PHP package in general.
+
+```php
+<?php
+
+namespace Opis\Closure;
+
+use Closure;
+use Serializable;
+use SplObjectStorage;
+use ReflectionObject;
+
+class SerializableClosure implements Serializable
+{
+    /**
+     * Implementation of Serializable::serialize()
+     *
+     * @return  string  The serialized closure
+     */
+    public function serialize()
+    {
+    }
+
+    /**
+     * Implementation of Serializable::unserialize()
+     *
+     * @param   string $data Serialized data
+     * @throws SecurityException
+     */
+    public function unserialize($data)
+    {
+    }
+}
+```
+
+We can see that this class implements PHP's `Serializable` interface, therefore, it must provide `serialize` and `unserialize` methods. I have ripped off implementations of these methods as its out of scope this blog post to see how serialization is done.
+
+### Usage in Laravel
+
+One of the major use of this package is **Queueing Closures** in Laravel. Read more about in [docs](https://laravel.com/docs/8.x/queues#queueing-closures).
+
+Example of dispatching a closure in Laravel:
+
+```php
+$post = App\Post::find(1);
+
+dispatch(function () use ($post) {
+    $post->publish();
+});
+```
+
+To make this very feature possible, Laravel uses `opis/closure` package. Let's find out how.
+
+### dispatch() helper
+
+```php
+    /**
+     * Dispatch a job to its appropriate handler.
+     *
+     * @param  mixed  $job
+     * @return \Illuminate\Foundation\Bus\PendingDispatch
+     */
+    function dispatch($job)
+    {
+        return $job instanceof Closure
+                ? new PendingClosureDispatch(CallQueuedClosure::create($job))
+                : new PendingDispatch($job);
+    }
+```
+
+Inside dispatch helper, it checks if `$job` is instance of `Closure` class (provided by PHP). Other option here would be an instance of a job class that we create normally and they are serialized easily. We are interested in `Closure` so lets dig further into that.
+
+### CallQueuedClosure::create()
+
+```php
+<?php
+
+namespace Illuminate\Queue;
+
+use Closure;
+use Illuminate\Queue\SerializableClosure;
+use Illuminate\Bus\Batchable;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Container\Container;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use ReflectionFunction;
+
+class CallQueuedClosure implements ShouldQueue
+{
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    /**
+     * Create a new job instance.
+     *
+     * @param  \Illuminate\Queue\SerializableClosure  $closure
+     * @return void
+     */
+    public function __construct(SerializableClosure $closure)
+    {
+        $this->closure = $closure;
+    }
+
+    /**
+     * Create a new job instance.
+     *
+     * @param  \Closure  $job
+     * @return self
+     */
+    public static function create(Closure $job)
+    {
+        return new self(new SerializableClosure($job));
+    }
+}
+```
+
+ `create()` method is a static constructor for `CallQueuedClosure` job class. Our closure which publishes the post is passed to `SerializableClosure` class constructor and a new instance is returned. Which is then assigned to `$this->closure` property on `CallQueuedClosure` job class. **At this point, our closure method is already serializable**.
+
+ `Illuminate\Queue\SerializableClosure` class extends the `SerializableClsoure` class from `opis/closure` package.
+
+```php
+<?php
+
+namespace Illuminate\Queue;
+
+use Opis\Closure\SerializableClosure as OpisSerializableClosure;
+
+class SerializableClosure extends OpisSerializableClosure
+{
+    use SerializesAndRestoresModelIdentifiers;
+
+    /**
+     * Transform the use variables before serialization.
+     *
+     * @param  array  $data The Closure's use variables
+     * @return array
+     */
+    protected function transformUseVariables($data)
+    {
+        foreach ($data as $key => $value) {
+            $data[$key] = $this->getSerializedPropertyValue($value);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Resolve the use variables after unserialization.
+     *
+     * @param  array  $data The Closure's transformed use variables
+     * @return array
+     */
+    protected function resolveUseVariables($data)
+    {
+        foreach ($data as $key => $value) {
+            $data[$key] = $this->getRestoredPropertyValue($value);
+        }
+
+        return $data;
+    }
+}
+```
+
+Laravel tends to wrap base classes from third-party packages into its own implementation, mostly with same name. That makes it easy for developers to further extend the functionality if they want to.
+
+So far, we have seen that `CallQueuedClosure` is a job class which needs a `SerializableClosure` type **closure.** After that,  `new PendingClosureDispatch()` takes care of dispatching the `CallQueuedClosure` job. 
+
+### PendingClosureDispatch
+
+```php
+<?php
+
+namespace Illuminate\Foundation\Bus;
+
+use Closure;
+
+class PendingClosureDispatch extends PendingDispatch
+{
+    /**
+     * Add a callback to be executed if the job fails.
+     *
+     * @param  \Closure  $callback
+     * @return $this
+     */
+    public function catch(Closure $callback)
+    {
+        $this->job->onFailure($callback);
+
+        return $this;
+    }
+}
+```
+
+We can see that this class is extending `PendingDispatch` which is responsible for dispatching normal job classes to the queues. 
+
+- Here's a [link](https://divinglaravel.com/preparing-jobs-for-queue) from [Mohamed Said](https://twitter.com/themsaid)'s blog f you want to read more on how jobs are dispatched and when serialization occurs.
+
+## Conclusion
+
+To execute a task on a given **queue**, Laravel needs to serialize and un-serialize information on that task. It was okay for job classes as they can be serialized normally. But, in order to push `closure` based tasks to queue, Laravel team used `opis/closure` package to serialize and unserialize information on the closures ( anonymous functions ). 
+
+## Interesting facts about `opis/closure` in Laravel context
+
+- Queueing Closures feature was first offered in Laravel **v4.0**
+- [Link](https://github.com/laravel/framework/commit/38ca53d9703e93ad8040b6379cc7e86efc8d7b15#diff-d2ab9925cad7eac58e0ff4cc0d251a937ecf49e4b6bf57f8b95aab76648a9d34) to very first commit on this feature by **Taylor Otwell** on **19 Apr, 2013** without using any third-party packages.
+- `jeremeamia/SuperClosure` package was then used to perform serialization closures. It is now deprecated.
+- [Link](https://github.com/laravel/framework/commit/eec168dc442cd1ee4e3c19bc3c289939f82b331e#diff-d2ab9925cad7eac58e0ff4cc0d251a937ecf49e4b6bf57f8b95aab76648a9d34) to commit where Taylor Otwell required the above mentioned package.
+- From Laravel **v5.1** to **v5.6**, this feature was discontinued ( I was unable more information on this in docs and on GitHub repository )
+- In Laravel **v5.7**, this feature was introduced again. [Link to PR](https://github.com/laravel/framework/pull/25777) by Taylor Otwell. It can be seen that `opis/closure` package was used this time.
+
+---
+
+I hope you enjoyed this post. Next, we will see how Laravel uses `opis/closure` package. You can follow me on [Twitter](https://twitter.com/Zubairmohsin33) or join my [newsletter](https://letter.zubairmohsin.dev) for more content.

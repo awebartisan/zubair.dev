@@ -18,6 +18,18 @@
 
   <url>
     <loc
+      >https://zubairmohsin.dev/blog/how-closures-are-serialized-in-laravel-using-opis-closure-package</loc
+    >
+  </url>
+
+  <url>
+    <loc
+      >https://zubairmohsin.dev/blog/how-date-and-time-work-in-laravel-using-nesbot-carbon-package</loc
+    >
+  </url>
+
+  <url>
+    <loc
       >https://zubairmohsin.dev/blog/how-email-address-validation-works-in-laravel-using-egulias-email-validation-package</loc
     >
   </url>
