@@ -77,4 +77,10 @@
       >https://zubairmohsin.dev/blog/laracon-online-2021-talks-twitter-thread-links</loc
     >
   </url>
+
+  <url>
+    <loc
+      >https://zubairmohsin.dev/blog/why-laravel-requires-psr-container-package</loc
+    >
+  </url>
 </urlset>

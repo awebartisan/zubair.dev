@@ -1,0 +1,190 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title: 'Why Laravel requires `psr/container` package?',
+    description:
+        "Let's find out why Laravel requires a simple package like `psr/container`.",
+    readTime: 3,
+    url:
+        'https://zubairmohsin.dev/blog/why-laravel-requires-psr-container-package',
+    canonical:
+        'https://zubairmohsin.dev/blog/why-laravel-requires-psr-container-package',
+    showDate: 'Apr 17, 2021',
+    date: new Date('2021-04-17'),
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+From the About section of [psr/container](https://github.com/php-fig/container) package on GitHub:
+
+> This repository holds all interfaces related to [PSR-11 (Container Interface)](https://www.php-fig.org/psr/psr-11/).
+Note that this is not a Container implementation of its own. It is merely abstractions that describe the components of a Dependency Injection Container.
+
+If we look at the code in [this repository](https://github.com/php-fig/container/tree/master/src) we can see that there are only three **interface** files.
+
+- `ContainerInterface`
+- `ContainerExceptionInterface`
+- `NotFoundExceptionInterface`
+
+Let's take a look at `ContainerInterface` interface file:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Psr\Container;
+
+/**
+ * Describes the interface of a container that exposes methods to read its entries.
+ */
+interface ContainerInterface
+{
+    /**
+     * Finds an entry of the container by its identifier and returns it.
+     *
+     * @param string $id Identifier of the entry to look for.
+     *
+     * @throws NotFoundExceptionInterface  No entry was found for **this** identifier.
+     * @throws ContainerExceptionInterface Error while retrieving the entry.
+     *
+     * @return mixed Entry.
+     */
+    public function get(string $id);
+
+    /**
+     * Returns true if the container can return an entry for the given identifier.
+     * Returns false otherwise.
+     *
+     * `has($id)` returning true does not mean that `get($id)` will not throw an exception.
+     * It does however mean that `get($id)` will not throw a `NotFoundExceptionInterface`.
+     *
+     * @param string $id Identifier of the entry to look for.
+     *
+     * @return bool
+     */
+    public function has(string $id): bool;
+}
+```
+
+It has two method signatures. `get()` and `has()`. Any class that **implements** that interface must have definitions for these two methods. Let's see if Laravel's container has these methods.
+
+## Laravel Container
+
+I am assuming every Laravel Developer knows that there's a **Container**. It's simply a class somewhere in the framework code. Let's perform a search in our code editor. We find **two** files named `Container`.
+
+- `Illuminate\Contracts\Container\Container.php` , this is an **interface**
+- `Illuminate\Container\Container` , this is an implementation of above interface
+
+If we look at the above mentioned `Container` interface file we can see that Laravel is **extending** the `ContainerInterface` from `psr/container` package and also adds some method signatures of its own.
+
+```php
+<?php
+
+namespace Illuminate\Contracts\Container;
+
+use Closure;
+use Psr\Container\ContainerInterface;
+
+interface Container extends ContainerInterface
+{
+    /**
+     * Determine if the given abstract type has been bound.
+     *
+     * @param  string  $abstract
+     * @return bool
+     */
+    public function bound($abstract);
+}
+```
+
+Now let's take a look at Laravel's `Container` implementation class.
+
+```php
+<?php
+
+namespace Illuminate\Container;
+
+use Illuminate\Contracts\Container\Container as ContainerContract;
+
+class Container implements ContainerContract
+{
+    /**
+     *  {@inheritdoc}
+     */
+    public function get($id)
+    {
+        try {
+            return $this->resolve($id);
+        } catch (Exception $e) {
+            if ($this->has($id) || $e instanceof CircularDependencyException) {
+                throw $e;
+            }
+
+            throw new EntryNotFoundException($id, $e->getCode(), $e);
+        }
+    }
+
+    /**
+     *  {@inheritdoc}
+     */
+    public function has($id)
+    {
+        return $this->bound($id);
+    }
+
+   /**
+     * Determine if the given abstract type has been bound.
+     *
+     * @param  string  $abstract
+     * @return bool
+     */
+    public function bound($abstract)
+    {
+        return isset($this->bindings[$abstract]) ||
+            isset($this->instances[$abstract]) ||
+            $this->isAlias($abstract);
+    }
+}
+```
+
+We can see that this class implements `get()` and `has()` method from `ContainerInterface` of `psr/container` package.
+
+## But, Why?
+
+The real question here is, why go through all this trouble? Laravel team could have just made these interfaces and they wouldn't have to add another dependency to the framework? 
+
+### PHP-FIG
+
+[PHP-FIG](https://www.php-fig.org/) stands for **PHP Framework Interop Group.**
+
+From FAQ section of website, **aims of PHP-FIG**:
+
+- The idea behind the group is for project representatives to talk about the commonalities between our projects and find ways we can work together. Our main audience is each other, but we’re very aware that the rest of the PHP community is watching. If other folks want to adopt what we’re doing they are welcome to do so, but that is not the aim. **Nobody in the group wants to tell you, as a programmer, how to build your application**.
+
+To understand it better, consider the following:
+
+- Wouldn't it better if all PHP frameworks would follow a **common definition** of `Container` class? PHP-FIG has a recommended definition of the `Container` class and Laravel, Symfony and Yii ( to name a few frameworks ) follow this **recommendation**.
+
+### PSR
+
+PSR stands for **PHP Standards Recommendation.** That's what PHP-FIG does, just provide Standards **Recommendations.** Any project ( framework ) is welcome to adopt this standard.
+
+You can find the list of all PHP Standard Recommendations in numerical order [here](https://www.php-fig.org/psr/#numerical-index).
+
+The numbers concatenated to PSR like **PSR-4** and **PSR-11**  just represent the order in which these standards were submitted/approved.
+
+### Conclusion
+
+In order to comply with PHP-FIG provided **PSR-11 Container Interface** recommendation, Laravel requires the `psr/container` package. 
+
+## Interesting facts about `psr/container` in Laravel context
+
+- [Pull request](https://github.com/laravel/framework/pull/19822) for making Laravel's container compliant to PSR-11 Container Interface was opened by [Marco Aurélio Deleu](https://github.com/deleugpn) on **29 June, 2017** and was approved by Taylor Otwell.
+- It was added in Laravel **v5.5**
+- Laravel Container didn't have `get()` and `has()` method before compliance with PSR-11 Container Interface.
+- `make()` and `bound()` methods were available alternatives on Laravel Container.
+
+---
+
+I hope you enjoyed this post. Next, we will see how Laravel uses `psr/simple-cache` package. You can follow me on [Twitter](https://twitter.com/Zubairmohsin33) or join my [newsletter](https://letter.zubairmohsin.dev) for more content.
