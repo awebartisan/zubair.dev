@@ -1,0 +1,145 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title: 'Why Laravel requires `ramsey/uuid` package?',
+    description:
+        "Let's find out why Laravel requires `ramsey/uuid` package.",
+    readTime: 3,
+    url:
+        'https://zubairmohsin.dev/blog/why-laravel-requires-ramsey-uuid-package',
+    canonical:
+        'https://zubairmohsin.dev/blog/why-laravel-requires-ramsey-uuid-package',
+    showDate: 'May 2, 2021',
+    date: new Date('2021-05-02'),
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+From the About section on GitHub of ramsey/uuid package:
+
+> A PHP library for generating universally unique identifiers (UUIDs).
+
+First thing we notice that its not a Laravel package, instead a PHP library and it can be used in any PHP project. Secondly, **universally unique identifiers (UUIDs)**, let's talk a bit about what are UUIDs.
+
+## What is a UUID?
+
+UUID stands for **Universally Unique Identifier**. When it says Universally, it truly means Universally. 
+
+> When you generate a UUID, its uniqueness can be guaranteed across space and time.
+
+A UUID is 128 bits long and is usually represented as a hexadecimal string split into five groups with dashes, like below:
+
+```php
+998fd066-c786-4064-9c98-e378e450cd4a
+```
+
+We can use these **unique** values and assign them to our database records and later **identify** the records by these hexadecimal strings.
+
+## UUIDs in Laravel
+
+Laravel framework is famous for best Developer Experience (DX), therefore, Laravel makes it a cinch to work with UUIDs. If you open the **tinker** in Laravel project ****and write below code snippet:
+
+```php
+(string) Str::uuid();
+```
+
+You'll get an output like below:
+
+```php
+"220b94fc-04f9-48eb-a14a-ba868ff43919"
+```
+
+It's just that simple to create UUIDs  in Laravel. Now let's take a look at how it works and where `ramsey/uuid` package comes into play.
+
+### Code Dive
+
+If we dive into the definition of `Str::uuid()` method, we see the following:
+
+```php
+<?php
+
+namespace Illuminate\Support;
+
+use Ramsey\Uuid\Uuid;
+
+class Str
+{
+	
+    /**
+     * The callback that should be used to generate UUIDs.
+     *
+     * @var callable
+     */
+    protected static $uuidFactory;
+    
+
+    /**
+     * Generate a UUID (version 4).
+     *
+     * @return \Ramsey\Uuid\UuidInterface
+     */
+    public static function uuid()
+    {
+        return static::$uuidFactory
+                    ? call_user_func(static::$uuidFactory)
+                    : Uuid::uuid4();
+    }
+
+    /**
+     * Set the callable that will be used to generate UUIDs.
+     *
+     * @param  callable|null  $factory
+     * @return void
+     */
+    public static function createUuidsUsing(callable $factory = null)
+    {
+        static::$uuidFactory = $factory;
+    }
+
+}
+```
+
+If we first call `createUuidsUsing()` method and provide a `callback` that will create UUIDs, then `uuid()` method will execute that `callback` to generate a UUID. But if that's not the case, it will use `Uuid::uuid4()` from `ramsey/uuid` to generate the UUID for us. This is how Laravel is able to generate UUIDs by leveraging `ramsey/uuid` package.
+
+You might be wondering about why this method is named as `uuid4()` ? What does `4` mean here?
+
+There are five versions of UUIDs. Each version has different algorithm to generate it. Read more about all versions in [ramsey/uuid package docs](https://uuid.ramsey.dev/en/latest/rfc4122.html).
+
+## UUIDs in Laravel migrations
+
+Laravel provides a handy method on `Illuminate\Database\Schema\Blueprint` class named `uuid` to specify in migrations that this column will be used to store a UUID.
+
+```php
+$table->uuid('id');
+```
+
+You might wonder if there's a **column type** in database which stores UUIDs, but that's not the case. If we look inside the `Illuminate\Database\Schema\Grammars\MySqlGrammar` class and find the `typeUuid()` method, we can see the following:
+
+```php
+    /**
+     * Create the column definition for a uuid type.
+     *
+     * @param  \Illuminate\Support\Fluent  $column
+     * @return string
+     */
+    protected function typeUuid(Fluent $column)
+    {
+        return 'char(36)';
+    }
+```
+
+Which means that `$table->uuid()` will be translated to a column wich `char` data type and its length would be `36` characters, always.
+
+> Laravel does not generate UUIDs automatically for `uuid` columns. Developer must provide the logic to generate UUIDs when inserting records in the database.
+
+## Interesting facts about `ramsey/uuid` in Laravel context
+
+- This package was first required on **08 Aug, 2016** by **Taylor Otwell** when he worked on **channel specific notifications.** UUIDs were used to identify the database notifications.
+- [Link to commit](https://github.com/laravel/framework/commit/dce28b4d0b171f1da1193e45296e809438b35ed3#diff-d2ab9925cad7eac58e0ff4cc0d251a937ecf49e4b6bf57f8b95aab76648a9d34) by **Taylor Otwell**.
+- Version `~3.0` was used initially in Laravel **v5.3**
+- UUID helper methods were introduced in Laravel **v5.6.**
+- [Link to commit](https://github.com/laravel/framework/commit/3d39604bba72d45dab5b53951af42bbb21110cad) by **Taylor Otwell** which added the helper methods
+
+---
+
+I hope you enjoyed this post. Next, we will see why Laravel requires `swiftmailer/swiftmailer` package. You can follow me on [Twitter](https://twitter.com/Zubairmohsin33) or join my [newsletter](https://letter.zubairmohsin.dev) for more content.
