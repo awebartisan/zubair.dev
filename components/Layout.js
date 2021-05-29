@@ -56,13 +56,13 @@ export default function Layout({ children, title }) {
                                 </a>
                             </Link>
                         </li>
-                        <li>
+                        {/* <li>
                             <Link href="https://letter.zubairmohsin.dev">
                                 <a target="_blank" className="text-gray-600">
                                     Newsletter
                                 </a>
                             </Link>
-                        </li>
+                        </li> */}
                     </ul>
                 </nav>
             </header>
