@@ -23,7 +23,7 @@ export default function Index() {
                         {
                             url:
                                 'https://og-image-gcojn5iwm-zubairmohsin.vercel.app/' +
-                                encodeURI(meta.title),
+                                encodeURI("Zubair Mohsin"),
                         },
                     ],
                     locale: 'en',
