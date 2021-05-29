@@ -1,86 +1,86 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://zubairmohsin.dev/about</loc>
+    <loc>https://zubair.dev/about</loc>
   </url>
 
   <url>
-    <loc>https://zubairmohsin.dev/contact</loc>
+    <loc>https://zubair.dev/contact</loc>
   </url>
 
   <url>
-    <loc>https://zubairmohsin.dev</loc>
+    <loc>https://zubair.dev</loc>
   </url>
 
   <url>
-    <loc>https://zubairmohsin.dev/projects</loc>
+    <loc>https://zubair.dev/projects</loc>
   </url>
 
   <url>
     <loc
-      >https://zubairmohsin.dev/blog/how-closures-are-serialized-in-laravel-using-opis-closure-package</loc
+      >https://zubair.dev/blog/how-closures-are-serialized-in-laravel-using-opis-closure-package</loc
     >
   </url>
 
   <url>
     <loc
-      >https://zubairmohsin.dev/blog/how-date-and-time-work-in-laravel-using-nesbot-carbon-package</loc
+      >https://zubair.dev/blog/how-date-and-time-work-in-laravel-using-nesbot-carbon-package</loc
     >
   </url>
 
   <url>
     <loc
-      >https://zubairmohsin.dev/blog/how-email-address-validation-works-in-laravel-using-egulias-email-validation-package</loc
+      >https://zubair.dev/blog/how-email-address-validation-works-in-laravel-using-egulias-email-validation-package</loc
     >
   </url>
 
   <url>
-    <loc>https://zubairmohsin.dev/blog/how-i-messed-up-my-newsletter</loc>
+    <loc>https://zubair.dev/blog/how-i-messed-up-my-newsletter</loc>
   </url>
 
   <url>
     <loc
-      >https://zubairmohsin.dev/blog/how-laravel-uses-doctrine-inflector-package</loc
-    >
-  </url>
-
-  <url>
-    <loc
-      >https://zubairmohsin.dev/blog/how-laravel-uses-dragonmantank-cronexpression-package-in-task-scheduling</loc
+      >https://zubair.dev/blog/how-laravel-uses-doctrine-inflector-package</loc
     >
   </url>
 
   <url>
     <loc
-      >https://zubairmohsin.dev/blog/how-laravel-uses-league-flysystem-package-to-create-robust-filesystem</loc
+      >https://zubair.dev/blog/how-laravel-uses-dragonmantank-cronexpression-package-in-task-scheduling</loc
     >
   </url>
 
   <url>
     <loc
-      >https://zubairmohsin.dev/blog/how-logging-works-in-laravel-using-monolog-package</loc
+      >https://zubair.dev/blog/how-laravel-uses-league-flysystem-package-to-create-robust-filesystem</loc
     >
   </url>
 
   <url>
     <loc
-      >https://zubairmohsin.dev/blog/how-markdown-emails-work-in-laravel-using-league-commonmark-package</loc
-    >
-  </url>
-
-  <url>
-    <loc>https://zubairmohsin.dev/blog/index</loc>
-  </url>
-
-  <url>
-    <loc
-      >https://zubairmohsin.dev/blog/laracon-online-2021-talks-twitter-thread-links</loc
+      >https://zubair.dev/blog/how-logging-works-in-laravel-using-monolog-package</loc
     >
   </url>
 
   <url>
     <loc
-      >https://zubairmohsin.dev/blog/why-laravel-requires-psr-container-package</loc
+      >https://zubair.dev/blog/how-markdown-emails-work-in-laravel-using-league-commonmark-package</loc
+    >
+  </url>
+
+  <url>
+    <loc>https://zubair.dev/blog/index</loc>
+  </url>
+
+  <url>
+    <loc
+      >https://zubair.dev/blog/laracon-online-2021-talks-twitter-thread-links</loc
+    >
+  </url>
+
+  <url>
+    <loc
+      >https://zubair.dev/blog/why-laravel-requires-psr-container-package</loc
     >
   </url>
 </urlset>

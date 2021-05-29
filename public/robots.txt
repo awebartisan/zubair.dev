@@ -1,2 +1,2 @@
 User-agent: *
-Sitemap: https://zubairmohsin.dev/sitemap.xml
+Sitemap: https://zubair.dev/sitemap.xml
