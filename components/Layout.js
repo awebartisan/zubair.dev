@@ -27,7 +27,7 @@ export default function Layout({ children, title }) {
                                 <a
                                     className={
                                         router.pathname.includes('blog') ||
-                                        router.pathname === '/'
+                                            router.pathname === '/'
                                             ? 'text-gray-800'
                                             : 'text-gray-600'
                                     }
@@ -37,6 +37,13 @@ export default function Layout({ children, title }) {
                             </Link>
                         </li>
                         <li>
+                            <Link href="https://poly.zubair.dev">
+                                <a target="_blank" className="text-gray-600">
+                                    Timeline
+                                </a>
+                            </Link>
+                        </li>
+                        {/* <li>
                             <Link href="/about">
                                 <a
                                     className={
@@ -48,7 +55,7 @@ export default function Layout({ children, title }) {
                                     About
                                 </a>
                             </Link>
-                        </li>
+                        </li> */}
                         <li>
                             <Link href="https://twitter.com/zubairmohsin33">
                                 <a target="_blank" className="text-gray-600">

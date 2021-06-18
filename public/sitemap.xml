@@ -17,10 +17,6 @@
   </url>
 
   <url>
-    <loc>https://zubair.dev/resume</loc>
-  </url>
-
-  <url>
     <loc
       >https://zubair.dev/blog/how-closures-are-serialized-in-laravel-using-opis-closure-package</loc
     >
