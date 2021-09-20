@@ -1,0 +1,77 @@
+import BlogPost from '../../components/BlogPost';
+
+export const meta = {
+    title: 'Laravel Form Request without a From',
+    description: 'How to use Laravel form requests without actually submitting a form.',
+    readTime: 3,
+    url: 'https://zubair.dev/blog/laravel-form-requests-without-a-form',
+    canonical:
+        'https://zubair.dev/blog/laravel-form-requests-without-a-form',
+    showDate: 'Sep 20, 2021',
+    date: new Date('2021-09-20'),
+};
+
+export default ({ children }) => <BlogPost meta={meta}>{children}</BlogPost>;
+
+We can leverage a `FormRequest` without actually submitting a form in two ways:
+
+- Using the `after` hook on `Validator` instance
+- Merging some data manually in the request and then validating it.
+
+Let's take a look at these.
+
+## After hook on Validator instance
+
+```jsx
+class DestroyPostRequest extends FormRequest
+{
+
+    public function rules(): array
+    {
+        return [];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($this->somethingElseIsInvalid()) {
+                $validator->errors()->add('field', 'Something is wrong with this field!');
+            }
+        });
+    }
+}
+```
+
+In this case, `rules` method return an empty `array` since we don't have any fields against which we can perform validations.
+
+By using the `withValidator` method, we are able to perform additional logic and add errors to the validator.
+
+## Merge data manually in request and then validate it
+
+```jsx
+class DestroyPostRequest extends FormRequest
+{
+
+    public function prepareForValidation(): void
+    {
+        $this->merge([
+            'post_id' => $this->route('id') 
+        ]);
+    }
+
+    public function rules(): array
+    {
+        return [
+            'post_id' => ['required', 'between:1,50']
+        ];
+    }
+}
+```
+
+`prepareForValidation` allows us to intialize or sanitize the request data before validation rules are applied. We can also add some new data to request inside this method.
+
+In above example, `post_id` field is being added to the request and then afterwards being validated inside the rules.
+
+---
+
+I hope you enjoyed this post. Follow me on [Twitter](https://twitter.com/Zubairmohsin33) for Laravel and Shopify Apps content and more.
